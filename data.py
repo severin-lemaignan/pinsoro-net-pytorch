@@ -1,46 +1,90 @@
 import torch
-import glob
-import unicodedata
-import string
+from torch.utils.data import Dataset
+import pandas as pd
 
-all_letters = string.ascii_letters + " .,;'-"
-n_letters = len(all_letters)
+GOALORIENTED="goaloriented"
+AIMLESS="aimless"
+ADULTSEEKING="adultseeking"
+NOPLAY="noplay"
 
-def findFiles(path): return glob.glob(path)
+SOLITARY="solitary"
+ONLOOKER="onlooker"
+PARALLEL="parallel"
+ASSOCIATIVE="associative"
+COOPERATIVE="cooperative"
 
-# Turn a Unicode string to plain ASCII, thanks to http://stackoverflow.com/a/518232/2809427
-def unicodeToAscii(s):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', s)
-        if unicodedata.category(c) != 'Mn'
-        and c in all_letters
-    )
+PROSOCIAL="prosocial"
+ADVERSARIAL="adversarial"
+ASSERTIVE="assertive"
+FRUSTRATED="frustrated"
+PASSIVE="passive"
 
-# Read a file and split into lines
-def readLines(filename):
-    lines = open(filename).read().strip().split('\n')
-    return [unicodeToAscii(line) for line in lines]
+ALL_ANNOTATIONS = [GOALORIENTED,
+                AIMLESS,
+                ADULTSEEKING,
+                NOPLAY,
+                SOLITARY,
+                ONLOOKER,
+                PARALLEL,
+                ASSOCIATIVE,
+                COOPERATIVE,
+                PROSOCIAL,
+                ADVERSARIAL,
+                ASSERTIVE,
+                FRUSTRATED,
+                PASSIVE]
 
-# Build the category_lines dictionary, a list of lines per category
-category_lines = {}
-all_categories = []
-for filename in findFiles('../data/names/*.txt'):
-    category = filename.split('/')[-1].split('.')[0]
-    all_categories.append(category)
-    lines = readLines(filename)
-    category_lines[category] = lines
 
-n_categories = len(all_categories)
+class PInSoRoDataset(Dataset):
+    """The PInSoRo dataset."""
 
-# Find letter index from all_letters, e.g. "a" = 0
-def letterToIndex(letter):
-    return all_letters.find(letter)
+    def __init__(self, csv_file):
+        """
+        Args:
+            csv_file (string): Path to the csv file with annotations.
+        """
+        print("Loading %s... this may take a while!" % csv_file)
+        self.pinsoro = pd.read_csv(csv_file)
 
-# Turn a line into a <line_length x 1 x n_letters>,
-# or an array of one-hot letter vectors
-def lineToTensor(line):
-    tensor = torch.zeros(len(line), 1, n_letters)
-    for li, letter in enumerate(line):
-        tensor[li][0][letterToIndex(letter)] = 1
-    return tensor
 
+    def makeAnnotationTensor(self, purple_constructs, yellow_constructs):
+        """
+        The social behaviours of the 2 children is encoded as a single one-hot vector.
+        For instance, if purple child is <aimless, solitary, prosocial> and the yellow child is <aimless, onlooker, hostile>, it might be encoded as:
+        <0, 1, 0, 0, 1, 0 ............... 1, 0, 0, 0>
+         \--------/  \----          ...    --------/
+          task engag. social enga.         social attitude
+          purple        purple               yellow
+        """
+
+        tensor = torch.zeros(1, len(ALL_ANNOTATIONS) * 2) # x2 -> purple child + yellow child
+
+        for c in purple_constructs:
+            if pd.isnull(c):
+                return None
+            tensor[0][ALL_ANNOTATIONS.index(c)] = 1
+
+        for c in yellow_constructs:
+            if pd.isnull(c):
+                return None
+            tensor[0][ALL_ANNOTATIONS.index(c) + len(ALL_ANNOTATIONS)] = 1
+
+    def __len__(self):
+        return len(self.pinsoro)
+
+    def __getitem__(self, idx):
+
+        ann = self.makeAnnotationTensor(self.pinsoro.iloc[idx,432:435], self.pinsoro.iloc[idx,435:438])
+
+        #sample = {'poses': self.pinsoro[idx, 7:147].as_matrix(), 'annotations': ann}
+        sample = {'annotations': ann}
+
+        return sample
+
+if __name__ == "__main__":
+    import sys
+    d = PInSoRoDataset(sys.argv[1])
+    print(len(d))
+    print(d[0])
+    print(d[50])
+    print(d[1000])
