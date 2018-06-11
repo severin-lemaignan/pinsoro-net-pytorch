@@ -15,12 +15,12 @@ class PInSoRoRNN(nn.Module):
         self.softmax = nn.LogSoftmax()
 
     def forward(self, input, hidden):
-        combined_poses = torch.cat((input, hidden), 1)
+        combined_poses = torch.cat((input, hidden))
         hidden_poses = self.i2h_poses(combined_poses)
         output_poses = self.i2o_poses(combined_poses)
-        output = self.softmax(output)
+        output = self.softmax(output_poses)
         return output, hidden_poses
 
     def initHidden(self):
 
-        return Variable(torch.zeros(1, self.hidden_size), device=self.device)
+        return torch.zeros(1, self.hidden_size, device=self.device, requires_grad=True)

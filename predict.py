@@ -2,7 +2,7 @@ from model import *
 from data import *
 import sys
 
-rnn = torch.load('char-rnn-classification.pt')
+rnn = torch.load('pinsoro-rnn-classification.pt')
 
 # Just return an output given a line
 def evaluate(line_tensor):
