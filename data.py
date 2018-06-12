@@ -11,10 +11,17 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import pandas as pd
 
+MISSINGDATA="missingdata"
+
 GOALORIENTED="goaloriented"
 AIMLESS="aimless"
 ADULTSEEKING="adultseeking"
 NOPLAY="noplay"
+
+TASK_ENGAGEMENT = [GOALORIENTED,
+                   AIMLESS,
+                   ADULTSEEKING,
+                   NOPLAY]
 
 SOLITARY="solitary"
 ONLOOKER="onlooker"
@@ -22,38 +29,44 @@ PARALLEL="parallel"
 ASSOCIATIVE="associative"
 COOPERATIVE="cooperative"
 
+SOCIAL_ENGAGEMENT = [SOLITARY,
+                     ONLOOKER,
+                     PARALLEL,
+                     ASSOCIATIVE,
+                     COOPERATIVE]
+
 PROSOCIAL="prosocial"
 ADVERSARIAL="adversarial"
 ASSERTIVE="assertive"
 FRUSTRATED="frustrated"
 PASSIVE="passive"
 
-ALL_ANNOTATIONS = [GOALORIENTED,
-                AIMLESS,
-                ADULTSEEKING,
-                NOPLAY,
-                SOLITARY,
-                ONLOOKER,
-                PARALLEL,
-                ASSOCIATIVE,
-                COOPERATIVE,
-                PROSOCIAL,
+SOCIAL_ATTITUDE = [PROSOCIAL,
                 ADVERSARIAL,
                 ASSERTIVE,
                 FRUSTRATED,
                 PASSIVE]
 
+ALL_ANNOTATIONS = TASK_ENGAGEMENT + SOCIAL_ENGAGEMENT + SOCIAL_ATTITUDE
 
 class PInSoRoDataset(Dataset):
     """The PInSoRo dataset."""
 
-    def __init__(self, path, device, chunksize=1000):
+    def __init__(self, path, device, constructs_class=None, chunksize=1000):
         """
         :param path: (string): Path to the csv file with annotations.
+        :param device: the pytorch device (cpu or cuda)
+        :constructs_class: one of ALL_ANNOTATIONS, TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT or SOCIAL_ATTITUDE
         :param chunksize: nb of CSV rows loaded at the same time
         
 
         """
+        self.POSES_INPUT_SIZE = 140
+
+        self.constructs_class = constructs_class if not None else ALL_ANNOTATIONS
+
+        self.ANNOTATIONS_OUTPUT_SIZE = len(self.constructs_class) * 2
+
         self.device=device
         self.path = path
 
@@ -81,7 +94,7 @@ class PInSoRoDataset(Dataset):
                                             dtype=self.float32dtypes)
                             )
 
-    def makeAnnotationTensor(self, constructs):
+    def makeAnnotationTensor(self, constructs, annotation_set=None):
         """
         The social behaviours of the 2 children is encoded as a single one-hot vector.
         For instance, if purple child is <aimless, solitary, prosocial> and the yellow child is <aimless, onlooker, hostile>, it might be encoded as:
@@ -91,29 +104,41 @@ class PInSoRoDataset(Dataset):
           purple        purple               yellow
         """
 
-        tensor = torch.zeros(1, len(ALL_ANNOTATIONS) * 2,  # x2 -> purple child + yellow child
+        if annotation_set is None:
+            annotation_set = ALL_ANNOTATIONS
+
+        tensor = torch.zeros(len(annotation_set) * 2,  # x2 -> purple child + yellow child
                              device=self.device)
+
         #import pdb;pdb.set_trace()
 
         for c in constructs[0:3]: # purple child construct
             if pd.isnull(c):
                 #raise RuntimeError("Missing annotations!")
-                logging.warning("Missing annotation -- replaced by 'no construct not present'")
+                logging.debug("Missing annotation -- replaced by 'construct not present'")
                 continue
                 
-            tensor[0][ALL_ANNOTATIONS.index(c)] = 1
+            if c in annotation_set:
+                tensor[annotation_set.index(c)] = 1
 
         for c in constructs[3:6]:  # yellow child constructs
             if pd.isnull(c):
                 #raise RuntimeError("Missing annotations!")
-                logging.warning("Missing annotation -- replaced by 'no construct not present'")
+                logging.debug("Missing annotation -- replaced by 'construct not present'")
                 continue
-            tensor[0][ALL_ANNOTATIONS.index(c) + len(ALL_ANNOTATIONS)] = 1
+
+            if c in annotation_set:
+                tensor[annotation_set.index(c) + len(annotation_set)] = 1
 
         return tensor
 
     def __len__(self):
         return self.nb_samples
+
+    def fill_NaN_with_unif_rand(self, a):
+        m = np.isnan(a) # mask of NaNs
+        a[m] = np.random.uniform(0., 1.)
+        return a
 
     def __getitem__(self, idx):
 
@@ -134,12 +159,16 @@ class PInSoRoDataset(Dataset):
             self.current_chunk_idx += 1
 
         
+        poses_np = self.current_chunk.iloc[chunk_offset, 7:7 + self.POSES_INPUT_SIZE].astype(np.float32).values
+        #import pdb;pdb.set_trace()
+        poses_np = self.fill_NaN_with_unif_rand(poses_np)
+
         poses_tensor = torch.tensor(
-                            self.current_chunk.iloc[chunk_offset, 7:147].astype(np.float32).values,
+                            poses_np,
                             device=self.device, requires_grad=True
                        )
             
-        annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, 432:438])
+        annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, 432:438], self.constructs_class)
 
         return poses_tensor, annotations_tensor
 
