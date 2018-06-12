@@ -29,13 +29,14 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')
 
-# NLLLoss does not calculate loss on a one-hot-vector
-# cf discussion: https://discuss.pytorch.org/t/feature-request-nllloss-crossentropyloss-that-accepts-one-hot-target/2724
-#criterion = nn.NLLLoss()
-criterion = nn.MultiLabelSoftMarginLoss()
+def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=False):
+    hidden = PInSoRoRNN.initHidden(batch_size, n_hidden)
 
-def train(model, optimizer, criterion, input_tensor, annotations_tensor):
-    hidden = PInSoRoRNN.initHidden(batch_size, n_hidden, device)
+    if cuda:
+        hidden = hidden.cuda()
+        input_tensor = input_tensor.cuda()
+        annotations_tensor = annotations_tensor.cuda()
+
     optimizer.zero_grad()
 
     # pass minibatches of data to the RNN
@@ -110,6 +111,16 @@ model = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
+# NLLLoss does not calculate loss on a one-hot-vector
+# cf discussion: https://discuss.pytorch.org/t/feature-request-nllloss-crossentropyloss-that-accepts-one-hot-target/2724
+#criterion = nn.NLLLoss()
+criterion = nn.MultiLabelSoftMarginLoss()
+
+if args.cuda:
+    model.cuda()
+    criterion.cuda()
+
+
 start_epoch = 1
 start_iteration = 0
 
@@ -152,7 +163,7 @@ try:
 
         for poses_tensor, annotations_tensor in loader:
 
-            output, loss = train(model, optimizer, criterion, poses_tensor, annotations_tensor)
+            output, loss = train(model, optimizer, criterion, poses_tensor, annotations_tensor, args.cuda)
             current_loss += loss
 
             iteration += 1
@@ -194,15 +205,16 @@ except (Exception, KeyboardInterrupt) as e:
     logging.error(traceback.format_exc())
     logging.fatal("Exception! Saving the model...")
 finally:
-    is_best = prec1 > best_prec1
-    save_checkpoint({
-        'epoch': epoch,
-        'iteration': iteration,
-        'state_dict': model.state_dict(),
-        'best_prec1': best_prec1,
-        'optimizer' : optimizer.state_dict(),
-        }, 
-        False,
-        os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
+    if epoch > 1 or iteration > 0: # only save if not a crash during first iteration (ie a bug)
+        is_best = prec1 > best_prec1
+        save_checkpoint({
+            'epoch': epoch,
+            'iteration': iteration,
+            'state_dict': model.state_dict(),
+            'best_prec1': best_prec1,
+            'optimizer' : optimizer.state_dict(),
+            }, 
+            False,
+            os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
 
 

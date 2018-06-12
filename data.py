@@ -117,8 +117,7 @@ class PInSoRoDataset(Dataset):
         if annotation_set is None:
             annotation_set = ALL_ANNOTATIONS
 
-        tensor = torch.zeros(len(annotation_set) * 2,  # x2 -> purple child + yellow child
-                             device=self.device)
+        tensor = torch.zeros(len(annotation_set) * 2)  # x2 -> purple child + yellow child
 
         #import pdb;pdb.set_trace()
 
@@ -169,14 +168,12 @@ class PInSoRoDataset(Dataset):
 
             self.current_chunk_idx += 1
 
-        
         poses_np = self.current_chunk.iloc[chunk_offset, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
-        poses_np = self.fill_NaN_with_unif_rand(poses_np)
+        #poses_np = self.fill_NaN_with_unif_rand(poses_np)
 
         poses_tensor = torch.tensor(
                             poses_np,
-                            dtype=torch.float32,
-                            device=self.device, requires_grad=True
+                            requires_grad=True
                        )
             
         annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, self.ANNOTATIONS_IDX:self.ANNOTATIONS_IDX+6], self.constructs_class)

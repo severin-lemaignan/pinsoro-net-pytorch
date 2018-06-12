@@ -22,6 +22,6 @@ class PInSoRoRNN(nn.Module):
         return output, hidden_poses
 
     @staticmethod
-    def initHidden(batch_size, hidden_size, device):
+    def initHidden(batch_size, hidden_size):
 
-        return torch.zeros(batch_size, hidden_size, device=device, requires_grad=True)
+        return torch.zeros(batch_size, hidden_size, requires_grad=True)
