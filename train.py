@@ -1,5 +1,9 @@
+# coding: utf-8
+
 import logging
 logging.basicConfig(level=logging.INFO)
+
+import argparse
 
 import traceback
 import os.path
@@ -18,34 +22,6 @@ from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE
 from model import PInSoRoRNN
 
 MODELS_PATH="models"
-
-device = torch.device("cuda") 
-#device = torch.device("cpu") 
-
-
-batch_size=300
-
-n_hidden = 116 # 140 + 116 = 256
-
-n_epochs = 10
-
-print_every_iteration = 50
-plot_every_iteration = 50
-
-save_every_iteration = 1000
-
-learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
-
-
-d = PInSoRoDataset(sys.argv[1], device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=1000)
-train_loader, validation_loader = train_validation_loaders(d,
-                                                           batch_size=batch_size, 
-                                                           num_workers=1,
-                                                           shuffle=False)
-
-
-rnn = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
-optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
 
 
 # NLLLoss does not calculate loss on a one-hot-vector
@@ -84,6 +60,45 @@ def timeSince(since):
 ################################################################################
 ################################################################################
 ################################################################################
+
+parser = argparse.ArgumentParser(description='PInSoRo-net -- PyTorch implementation')
+parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
+parser.add_argument('--batch_size', type=int, default=300, metavar='N', help='batch size')
+parser.add_argument('--cuda', action='store_true', help='use CUDA')
+parser.add_argument("dataset", help="path to the PInSoRo CSV dataset")
+
+args = parser.parse_args()
+
+if torch.cuda.is_available():
+    if not args.cuda:
+        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+device = torch.device("cuda" if args.cuda else "cpu")
+
+batch_size = args.batch_size
+
+n_hidden = 116 # 140 + 116 = 256
+
+n_epochs = args.epochs
+
+print_every_iteration = 50
+plot_every_iteration = 50
+
+save_every_iteration = 1000
+
+learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
+
+
+d = PInSoRoDataset(args.dataset, device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=1000)
+train_loader, validation_loader = train_validation_loaders(d,
+                                                           batch_size=batch_size, 
+                                                           num_workers=1,
+                                                           shuffle=False)
+
+
+rnn = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
+optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
+
 
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 start = time.time()
@@ -128,6 +143,7 @@ try:
     torch.save(rnn, os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
 
 except Exception as e:
+#except KeyboardInterrupt as e:
     logging.error(traceback.format_exc())
     logging.fatal("Exception! Saving the model to %s/pinsoronet-<...>-INTERRUPTED-<...>.pt" % MODELS_PATH)
     torch.save(rnn, os.path.join(MODELS_PATH, 'pinsoronet-%s-INTERRUPTED-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
