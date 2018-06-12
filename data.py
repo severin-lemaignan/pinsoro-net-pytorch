@@ -61,7 +61,9 @@ class PInSoRoDataset(Dataset):
         
 
         """
-        self.POSES_INPUT_SIZE = 140
+        self.POSES_INPUT_SIZE = (70 + 18) * 2 * 2 # (face + skel) * (x,y) * (purple, yellow)
+        self.POSES_INPUT_IDX = 0
+        self.ANNOTATIONS_IDX=self.POSES_INPUT_IDX + self.POSES_INPUT_SIZE + 1
 
         self.constructs_class = ALL_ANNOTATIONS if constructs_class is None else constructs_class
         self.ANNOTATIONS_OUTPUT_SIZE = len(self.constructs_class) * 2
@@ -72,9 +74,14 @@ class PInSoRoDataset(Dataset):
         # read headers + one row of data
         sample_r = pd.read_csv(path, nrows=1)
         # extract data types
-        dtypes = sample_r.drop('id',axis=1).dtypes
+        orig_dtypes = sample_r.drop('id',axis=1).dtypes
         # select np.float32 (instead of default float64) for all columns except timestamp
-        self.float32dtypes = {key:np.float32 for key, value in dtypes.items() if value == np.float64 and key != 'timestamp'}
+        self.dtypes = {}
+
+        self.dtypes.update({key:np.float32 for key, value in orig_dtypes.items() if "face" in key})
+        self.dtypes.update({key:np.float32 for key, value in orig_dtypes.items() if "skel" in key})
+
+        self.dtypes.update({key:np.object for key in orig_dtypes.keys()[431:438]})
 
 
         logging.info("Opening CSV file and counting samples...")
@@ -86,12 +93,16 @@ class PInSoRoDataset(Dataset):
 
         self.len = int(self.nb_samples / self.chunksize)
         self.current_chunk_idx = 0
+        #import pdb;pdb.set_trace()
         self.current_chunk = next(
                                 pd.read_csv(self.path, 
                                             skiprows= 1, # skip header
                                             chunksize=self.chunksize, 
-                                            dtype=self.float32dtypes)
+                                            names=self.dtypes.keys(),
+                                            dtype=self.dtypes)
                             )
+
+        #import pdb;pdb.set_trace()
 
     def makeAnnotationTensor(self, constructs, annotation_set=None):
         """
@@ -151,24 +162,26 @@ class PInSoRoDataset(Dataset):
             self.current_chunk = next(
                                 pd.read_csv(self.path, 
                                             skiprows=self.current_chunk_idx*self.chunksize + 1, # skip header as well
-                                            chunksize=self.chunksize, 
-                                            dtype=self.float32dtypes)
+                                            chunksize=self.chunksize,
+                                            names=self.dtypes.keys(),
+                                            dtype=self.dtypes)
                                 )
 
             self.current_chunk_idx += 1
 
         
-        poses_np = self.current_chunk.iloc[chunk_offset, 7:7 + self.POSES_INPUT_SIZE].astype(np.float32).values
-        #import pdb;pdb.set_trace()
+        poses_np = self.current_chunk.iloc[chunk_offset, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
         poses_np = self.fill_NaN_with_unif_rand(poses_np)
 
         poses_tensor = torch.tensor(
                             poses_np,
+                            dtype=torch.float32,
                             device=self.device, requires_grad=True
                        )
             
-        annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, 432:438], self.constructs_class)
+        annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, self.ANNOTATIONS_IDX:self.ANNOTATIONS_IDX+6], self.constructs_class)
 
+        #import pdb;pdb.set_trace()
         return poses_tensor, annotations_tensor
 
 def collate_minibatch(batch):
@@ -208,9 +221,13 @@ def train_validation_loaders(dataset, valid_fraction =0.1, **kwargs):
 if __name__ == "__main__":
     import sys
 
+    device = torch.device("cuda") 
+    #device = torch.device("cpu") 
 
-    d = PInSoRoDataset(sys.argv[1], chunksize=1000)
-    loader = DataLoader(d, batch_size=10, num_workers=1, shuffle=False)
+
+    d = PInSoRoDataset(sys.argv[1], chunksize=1000, device=device)
+    print(d[10])
+    loader = DataLoader(d, batch_size=1, num_workers=1, shuffle=False)
     print(len(d))
     for batch_idx, data in enumerate(loader):
         print('batch: {}\tdata: {}'.format(batch_idx, data))
