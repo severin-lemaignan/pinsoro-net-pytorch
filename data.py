@@ -63,8 +63,7 @@ class PInSoRoDataset(Dataset):
         """
         self.POSES_INPUT_SIZE = 140
 
-        self.constructs_class = constructs_class if not None else ALL_ANNOTATIONS
-
+        self.constructs_class = ALL_ANNOTATIONS if constructs_class is None else constructs_class
         self.ANNOTATIONS_OUTPUT_SIZE = len(self.constructs_class) * 2
 
         self.device=device
