@@ -1,55 +1,72 @@
 import logging
 logging.basicConfig(level=logging.INFO)
 
+import traceback
+import os.path
 import sys
 import random
 import time
+from datetime import datetime
 import math
 
 
 import torch
+import torch.nn as nn
 
 from data import PInSoRoDataset, train_validation_loaders, collate_minibatch
-from model import *
+from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE
+from model import PInSoRoRNN
 
-#device = torch.device("cuda") 
-device = torch.device("cpu") 
+MODELS_PATH="models"
+
+device = torch.device("cuda") 
+#device = torch.device("cpu") 
 
 
-poses_input_size = 140
-annotations_output_size = 28 
+batch_size=300
 
 n_hidden = 116 # 140 + 116 = 256
-n_epochs = 100000
-print_every = 500
-plot_every = 100
+
+n_epochs = 10
+
+print_every_iteration = 50
+plot_every_iteration = 50
+
+save_every_iteration = 1000
+
 learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
 
 
-d = PInSoRoDataset(sys.argv[1], device=device, chunksize=1000)
+d = PInSoRoDataset(sys.argv[1], device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=1000)
 train_loader, validation_loader = train_validation_loaders(d,
-                                                           batch_size=10, 
+                                                           batch_size=batch_size, 
                                                            num_workers=1,
                                                            shuffle=False)
 
 
-rnn = PInSoRoRNN(poses_input_size, n_hidden, annotations_output_size, device=device)
+rnn = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
 optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
-criterion = nn.NLLLoss()
+
+
+# NLLLoss does not calculate loss on a one-hot-vector
+# cf discussion: https://discuss.pytorch.org/t/feature-request-nllloss-crossentropyloss-that-accepts-one-hot-target/2724
+#criterion = nn.NLLLoss()
+criterion = nn.MultiLabelSoftMarginLoss()
 
 def train(input_tensor, annotations_tensor):
-    hidden = rnn.initHidden()
+    hidden = PInSoRoRNN.initHidden(batch_size, n_hidden, device)
     optimizer.zero_grad()
 
-    for i in range(input_tensor.size()[0]):
-        output, hidden = rnn(input_tensor[i], hidden)
+    # pass minibatches of data to the RNN
+    output, hidden = rnn(input_tensor, hidden)
 
+    #import pdb;pdb.set_trace()
     loss = criterion(output, annotations_tensor)
     loss.backward()
 
     optimizer.step()
 
-    return output, loss.data[0]
+    return output, loss.item()
 
 # Keep track of losses for plotting
 current_loss = 0
@@ -68,33 +85,50 @@ def timeSince(since):
 ################################################################################
 ################################################################################
 
-
+timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 start = time.time()
 
-logging.info("Starting training on %d epochs" % n_epochs)
+logging.info("Starting training on %d epochs (batch size: %d, %d iterations per epoch)" % (n_epochs, batch_size, int(len(d)/batch_size)))
 
 from torch.utils.data import DataLoader
-loader = DataLoader(d, batch_size=10, num_workers=1, shuffle=False, collate_fn=collate_minibatch)
+loader = DataLoader(d, batch_size=batch_size, num_workers=1, shuffle=False, collate_fn=collate_minibatch)
 
-for epoch in range(1, n_epochs + 1):
+epoch = 1
+iteration = 0
 
+try:
+    for epoch in range(1, n_epochs + 1):
 
-    for poses_tensor, annotations_tensor in loader:
+        iteration = 0
 
-        output, loss = train(poses_tensor, annotations_tensor)
-        current_loss += loss
+        logging.info('******** EPOCH %d/%d **********' % (epoch, n_epochs))
 
-        # Print epoch number, loss, name and guess
-        if epoch % print_every == 0:
-            #guess, guess_i = categoryFromOutput(output)
-            #correct = '✓' if guess == category else '✗ (%s)' % category
-            #print('%d %d%% (%s) %.4f %s / %s %s' % (epoch, epoch / n_epochs * 100, timeSince(start), loss, line, guess, correct))
-            logger.info('%d %d%% (%s) %.4f' % (epoch, epoch / n_epochs * 100, timeSince(start), loss))
+        for poses_tensor, annotations_tensor in loader:
 
-        # Add current loss avg to list of losses
-        if epoch % plot_every == 0:
-            all_losses.append(current_loss / plot_every)
-            current_loss = 0
+            output, loss = train(poses_tensor, annotations_tensor)
+            current_loss += loss
 
-torch.save(rnn, 'pinsoro-rnn-classification.pt')
+            iteration += 1
+
+            # Print epoch number, loss, name and guess
+            if iteration % print_every_iteration == 0:
+                #guess, guess_i = categoryFromOutput(output)
+                #correct = '✓' if guess == category else '✗ (%s)' % category
+                #print('%d %d%% (%s) %.4f %s / %s %s' % (epoch, epoch / n_epochs * 100, timeSince(start), loss, line, guess, correct))
+                logging.info('iteration %d (%d%% of epoch) (%s) %.4f' % (iteration, iteration*batch_size / len(d) * 100, timeSince(start), loss))
+
+            # Add current loss avg to list of losses
+            if iteration % plot_every_iteration == 0:
+                all_losses.append(current_loss / plot_every_iteration)
+                current_loss = 0
+
+            if iteration % save_every_iteration == 0:
+                torch.save(rnn, os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
+
+    torch.save(rnn, os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
+
+except Exception as e:
+    logging.error(traceback.format_exc())
+    logging.fatal("Exception! Saving the model to %s/pinsoronet-<...>-INTERRUPTED-<...>.pt" % MODELS_PATH)
+    torch.save(rnn, os.path.join(MODELS_PATH, 'pinsoronet-%s-INTERRUPTED-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
 
