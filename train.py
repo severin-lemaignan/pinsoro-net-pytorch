@@ -69,7 +69,8 @@ def timeSince(since):
 
 parser = argparse.ArgumentParser(description='PInSoRo-net -- PyTorch implementation')
 parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=300, metavar='N', help='batch size')
+parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
+parser.add_argument('--chunk-size', type=int, default=0, metavar='N', help='chunk size (default: load the whole dataset in one go)')
 parser.add_argument('--cuda', action='store_true', help='use CUDA')
 parser.add_argument('--resume', help='partially trained model to reuse as starting point')
 parser.add_argument("dataset", help="path to the PInSoRo CSV dataset")
@@ -98,7 +99,7 @@ save_every_iteration = 1000
 learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
 
 
-d = PInSoRoDataset(args.dataset, device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=batch_size*n_workers)
+d = PInSoRoDataset(args.dataset, device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=args.chunk_size)
 train_loader, validation_loader = train_validation_loaders(d,
                                                            batch_size=batch_size, 
                                                            num_workers=1,
@@ -163,6 +164,7 @@ try:
 
         for poses_tensor, annotations_tensor in loader:
 
+            #import pdb;pdb.set_trace()
             output, loss = train(model, optimizer, criterion, poses_tensor, annotations_tensor, args.cuda)
             current_loss += loss
 

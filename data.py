@@ -2,6 +2,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 import math 
+import time
 
 import torch
 from torch.utils.data import Dataset
@@ -49,18 +50,28 @@ SOCIAL_ATTITUDE = [PROSOCIAL,
 
 ALL_ANNOTATIONS = TASK_ENGAGEMENT + SOCIAL_ENGAGEMENT + SOCIAL_ATTITUDE
 
+def timeSince(since):
+    now = time.time()
+    s = now - since
+    m = math.floor(s / 60)
+    s -= m * 60
+    return '%dm %ds' % (m, s)
+
+
 class PInSoRoDataset(Dataset):
     """The PInSoRo dataset."""
 
-    def __init__(self, path, device, constructs_class=None, chunksize=1000):
+    def __init__(self, path, device, constructs_class=None, chunksize=0):
         """
         :param path: (string): Path to the csv file with annotations.
         :param device: the pytorch device (cpu or cuda)
         :constructs_class: one of ALL_ANNOTATIONS, TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT or SOCIAL_ATTITUDE
-        :param chunksize: nb of CSV rows loaded at the same time
+        :param chunksize: nb of CSV rows loaded at the same time. 0 means whole dataset (no chunking)
         
 
         """
+        start = time.time()
+
         self.POSES_INPUT_SIZE = (70 + 18) * 2 * 2 # (face + skel) * (x,y) * (purple, yellow)
         self.POSES_INPUT_IDX = 0
         self.ANNOTATIONS_IDX=self.POSES_INPUT_IDX + self.POSES_INPUT_SIZE + 1
@@ -88,21 +99,25 @@ class PInSoRoDataset(Dataset):
         self.nb_samples = sum(1 for line in open(path)) - 1
         logging.info("Found %d samples" % self.nb_samples)
 
-        logging.info("Loading CSV file in chunks (chunksize=%d)" % chunksize)
+        if chunksize == 0:
+            chunksize = self.nb_samples
+            logging.info("Loading whole CSV file in one single chunks (set --chunk-size to do otherwise)" % chunksize)
+        else:
+            logging.info("Loading CSV file in chunks (chunksize=%d)" % chunksize)
+
         self.chunksize = chunksize
 
-        self.len = int(self.nb_samples / self.chunksize)
         self.current_chunk_idx = 0
         #import pdb;pdb.set_trace()
-        self.current_chunk = next(
-                                pd.read_csv(self.path, 
+        self.current_chunk =pd.read_csv(self.path, 
                                             skiprows= 1, # skip header
-                                            chunksize=self.chunksize, 
+                           #                 chunksize=self.chunksize, 
                                             names=self.dtypes.keys(),
                                             dtype=self.dtypes)
-                            )
+                            
 
         #import pdb;pdb.set_trace()
+        logging.info("Dataset initialization took %s" % timeSince(start))
 
     def makeAnnotationTensor(self, constructs, annotation_set=None):
         """
@@ -156,7 +171,7 @@ class PInSoRoDataset(Dataset):
 
         # do we need to fetch the next chunk of our CSV file?
         while chunk_idx > self.current_chunk_idx:
-            logging.debug("Fetching next chunk (samples %d to %d)" % (chunk_idx * self.chunksize, (chunk_idx +1)*self.chunksize - 1))
+            logging.info("Fetching next chunk (samples %d to %d)" % (chunk_idx * self.chunksize, (chunk_idx +1)*self.chunksize - 1))
 
             self.current_chunk = next(
                                 pd.read_csv(self.path, 
