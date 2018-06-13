@@ -169,7 +169,7 @@ class PInSoRoDataset(Dataset):
             self.current_chunk_idx += 1
 
         poses_np = self.current_chunk.iloc[chunk_offset, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
-        #poses_np = self.fill_NaN_with_unif_rand(poses_np)
+        poses_np = self.fill_NaN_with_unif_rand(poses_np)
 
         poses_tensor = torch.tensor(
                             poses_np,
