@@ -61,10 +61,11 @@ def timeSince(since):
 class PInSoRoDataset(Dataset):
     """The PInSoRo dataset."""
 
-    def __init__(self, path, device, constructs_class=None, chunksize=0):
+    def __init__(self, path, device, batch_size, constructs_class=None, chunksize=0):
         """
         :param path: (string): Path to the csv file with annotations.
         :param device: the pytorch device (cpu or cuda)
+        :param batch_size: the batch size is used to return a dataset length which is a multiple of it
         :constructs_class: one of ALL_ANNOTATIONS, TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT or SOCIAL_ATTITUDE
         :param chunksize: nb of CSV rows loaded at the same time. 0 means whole dataset (no chunking)
         
@@ -81,6 +82,7 @@ class PInSoRoDataset(Dataset):
 
         self.device=device
         self.path = path
+        self.batch_size = batch_size
 
         # read headers + one row of data
         sample_r = pd.read_csv(path, nrows=1)
@@ -99,24 +101,27 @@ class PInSoRoDataset(Dataset):
         self.nb_samples = sum(1 for line in open(path)) - 1
         logging.info("Found %d samples" % self.nb_samples)
 
+        self.current_chunk_idx = 0
+
         if chunksize == 0:
             chunksize = self.nb_samples
-            logging.info("Loading whole CSV file in one single chunks (set --chunk-size to do otherwise)" % chunksize)
+            logging.info("Loading whole CSV file in one single chunks (set --chunk-size to do otherwise)")
+            self.current_chunk =pd.read_csv(self.path, 
+                                                skiprows= 1, # skip header
+                                                names=self.dtypes.keys(),
+                                                dtype=self.dtypes)
         else:
             logging.info("Loading CSV file in chunks (chunksize=%d)" % chunksize)
+            self.current_chunk = next(
+                                    pd.read_csv(self.path, 
+                                                skiprows= 1, # skip header
+                                                chunksize=chunksize, 
+                                                names=self.dtypes.keys(),
+                                                dtype=self.dtypes)
+                                    )
 
         self.chunksize = chunksize
 
-        self.current_chunk_idx = 0
-        #import pdb;pdb.set_trace()
-        self.current_chunk =pd.read_csv(self.path, 
-                                            skiprows= 1, # skip header
-                           #                 chunksize=self.chunksize, 
-                                            names=self.dtypes.keys(),
-                                            dtype=self.dtypes)
-                            
-
-        #import pdb;pdb.set_trace()
         logging.info("Dataset initialization took %s" % timeSince(start))
 
     def makeAnnotationTensor(self, constructs, annotation_set=None):
@@ -157,7 +162,7 @@ class PInSoRoDataset(Dataset):
         return tensor
 
     def __len__(self):
-        return self.nb_samples
+        return self.nb_samples - self.nb_samples % self.batch_size
 
     def fill_NaN_with_unif_rand(self, a):
         m = np.isnan(a) # mask of NaNs
@@ -173,6 +178,7 @@ class PInSoRoDataset(Dataset):
         while chunk_idx > self.current_chunk_idx:
             logging.info("Fetching next chunk (samples %d to %d)" % (chunk_idx * self.chunksize, (chunk_idx +1)*self.chunksize - 1))
 
+            
             self.current_chunk = next(
                                 pd.read_csv(self.path, 
                                             skiprows=self.current_chunk_idx*self.chunksize + 1, # skip header as well
@@ -180,6 +186,7 @@ class PInSoRoDataset(Dataset):
                                             names=self.dtypes.keys(),
                                             dtype=self.dtypes)
                                 )
+            
 
             self.current_chunk_idx += 1
 
