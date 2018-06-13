@@ -17,6 +17,13 @@ import math
 import torch
 import torch.nn as nn
 
+try:
+    from tensorboardX import SummaryWriter 
+except ImportError:
+    logging.error("Install tensorboard for pytorch with pip3 install tensorboard-pytorch")
+    sys.exit(1)
+
+
 from data import PInSoRoDataset, train_validation_loaders, collate_minibatch
 from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE
 from model import PInSoRoRNN
@@ -50,9 +57,6 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     return output, loss.item()
 
-# Keep track of losses for plotting
-current_loss = 0
-all_losses = []
 
 def timeSince(since):
     now = time.time()
@@ -98,8 +102,14 @@ save_every_iteration = 1000
 
 learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
 
+timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 
-d = PInSoRoDataset(args.dataset, device=device, constructs_class=SOCIAL_ATTITUDE, chunksize=args.chunk_size)
+writer = SummaryWriter('runs/%s' % timestamp)
+# Keep track of losses for plotting
+current_loss = 0
+
+
+d = PInSoRoDataset(args.dataset, device=device, batch_size=batch_size, constructs_class=SOCIAL_ATTITUDE, chunksize=args.chunk_size)
 train_loader, validation_loader = train_validation_loaders(d,
                                                            batch_size=batch_size, 
                                                            num_workers=1,
@@ -109,6 +119,12 @@ train_loader, validation_loader = train_validation_loaders(d,
 best_prec1 = 0
 
 model = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
+
+# log the graph of the network
+dummy_hidden = PInSoRoRNN.initHidden(1, n_hidden)
+dummy_input = torch.rand(1, d.POSES_INPUT_SIZE, requires_grad=True)
+writer.add_graph(model, (dummy_input, dummy_hidden ))
+
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
@@ -145,7 +161,6 @@ if start_epoch == 1 and start_iteration == 0:
     logging.info("Starting training on %d epochs (batch size: %d, %d iterations per epoch)" % (n_epochs, batch_size, int(len(d)/batch_size)))
 
 
-timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 start = time.time()
 
 
@@ -180,8 +195,7 @@ try:
             # Add current loss avg to list of losses
             if iteration % plot_every_iteration == 0:
                 avg_loss = current_loss / plot_every_iteration
-                all_losses.append(avg_loss)
-
+                writer.add_scalar('loss', avg_loss, iteration)
                 current_loss = 0
 
 
