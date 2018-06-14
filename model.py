@@ -1,41 +1,38 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 class PInSoRoRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, batch_size, seq_size, hidden_dim, output_dim):
+        """
+        :param seq_size: length of the datapoints sequence that we feed to the LSTM unit at each step
+        """
         super(PInSoRoRNN, self).__init__()
 
-        self.hidden_size = hidden_size
+        self.batch_size = batch_size
 
-        self.i2h_poses = nn.Linear(input_size + hidden_size, hidden_size)
+        self.hidden_dim = hidden_dim
 
-        self.i2o_poses = nn.Linear(input_size + hidden_size, hidden_size)
+        self.lstm_poses = nn.LSTM(seq_size, hidden_dim)
 
-        self.fc1_poses = nn.Linear(hidden_size, hidden_size)
-        self.fc2_poses = nn.Linear(hidden_size, hidden_size)
-        self.fc3_poses = nn.Linear(hidden_size, hidden_size)
-        self.fc4_poses = nn.Linear(hidden_size, output_size)
+        self.i2o_poses = nn.Linear(hidden_dim, output_dim)
 
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, input, hidden):
-        #import pdb;pdb.set_trace()
+        self.hidden = self.init_hidden()
 
-        combined_poses = torch.cat((input, hidden), 1)
-        hidden_poses = self.i2h_poses(combined_poses)
-        output_poses0 = self.i2o_poses(combined_poses)
+    def forward(self, input):
+        """
+        :param input: a 3D tensor - 1st dim is the sequence, 2nd dim is the batch, 3rd dim is the input dim
+        """
 
-        output_poses1 = self.fc1_poses(output_poses0)
-        output_poses2 = self.fc2_poses(output_poses1)
-        output_poses3 = self.fc3_poses(output_poses2)
+        lstm_out, self.hidden = self.lstm_poses(self.hidden)
 
-        output_poses = self.fc4_poses(output_poses3)
+        output_poses = self.i2o_poses(lstm_out)
 
         output = self.softmax(output_poses)
-        return output, hidden_poses
+        return output
 
-    @staticmethod
-    def initHidden(batch_size, hidden_size):
+    def initHidden(self):
 
-        return torch.zeros(batch_size, hidden_size, requires_grad=True)
+        return (torch.zeros(1, self.batch_size, self.hidden_dim, requires_grad=True),
+                torch.zeros(1, self.batch_size, self.hidden_dim, requires_grad=True))

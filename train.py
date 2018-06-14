@@ -37,14 +37,19 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
         shutil.copyfile(filename, 'model_best.pth.tar')
 
 def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=False):
-    hidden = PInSoRoRNN.initHidden(batch_size, n_hidden)
 
     if cuda:
-        hidden = hidden.cuda()
         input_tensor = input_tensor.cuda()
         annotations_tensor = annotations_tensor.cuda()
 
+    # Pytorch accumulates gradients.
+    # We need to clear them out before each instance
+    model.zero_grad()
     optimizer.zero_grad()
+
+    # Also, we need to clear out the hidden state of the LSTM,
+    # detaching it from its history on the last instance.
+    model.hidden = model.init_hidden()
 
     # pass minibatches of data to the RNN
     output, hidden = model(input_tensor, hidden)
@@ -91,7 +96,9 @@ device = torch.device("cuda" if args.cuda else "cpu")
 batch_size = args.batch_size
 
 n_workers = 8
-n_hidden = 116 # 140 + 116 = 256
+n_hidden = 256
+
+seq_size = 300 # 300 points at 30FPS = 10 sec of interaction
 
 n_epochs = args.epochs
 
@@ -100,7 +107,7 @@ plot_every_iteration = 50
 
 save_every_iteration = 1000
 
-learning_rate = 0.005 # If you set this too high, it might explode. If too low, it might not learn
+learning_rate = 0.05 # If you set this too high, it might explode. If too low, it might not learn
 
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 
@@ -109,7 +116,13 @@ writer = SummaryWriter('runs/%s' % timestamp)
 current_loss = 0
 
 
-d = PInSoRoDataset(args.dataset, device=device, batch_size=batch_size, constructs_class=SOCIAL_ATTITUDE, chunksize=args.chunk_size)
+d = PInSoRoDataset(args.dataset,
+                   device=device, 
+                   batch_size=batch_size, 
+                   seq_size=seq_size, 
+                   constructs_class=SOCIAL_ATTITUDE, 
+                   chunksize=args.chunk_size)
+
 train_loader, validation_loader = train_validation_loaders(d,
                                                            batch_size=batch_size, 
                                                            num_workers=1,
@@ -118,12 +131,11 @@ train_loader, validation_loader = train_validation_loaders(d,
 
 best_prec1 = 0
 
-model = PInSoRoRNN(d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
+model = PInSoRoRNN(batch_size, seq_size, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
 
 # log the graph of the network
-dummy_hidden = PInSoRoRNN.initHidden(1, n_hidden)
-dummy_input = torch.rand(1, d.POSES_INPUT_SIZE, requires_grad=True)
-writer.add_graph(model, (dummy_input, dummy_hidden ))
+dummy_input = torch.rand(1, 1, d.POSES_INPUT_SIZE, requires_grad=True)
+writer.add_graph(model, (dummy_input, ))
 
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)

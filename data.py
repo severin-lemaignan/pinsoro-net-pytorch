@@ -61,7 +61,7 @@ def timeSince(since):
 class PInSoRoDataset(Dataset):
     """The PInSoRo dataset."""
 
-    def __init__(self, path, device, batch_size, constructs_class=None, chunksize=0):
+    def __init__(self, path, device, batch_size, seq_size, constructs_class=None, chunksize=0):
         """
         :param path: (string): Path to the csv file with annotations.
         :param device: the pytorch device (cpu or cuda)
