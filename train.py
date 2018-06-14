@@ -170,6 +170,7 @@ loader = DataLoader(d, batch_size=batch_size, num_workers=n_workers, shuffle=Fal
 prec1 = 0
 
 iteration = start_iteration
+tot_iteration = start_iteration
 
 try:
     for epoch in range(start_epoch, n_epochs + 1):
@@ -184,6 +185,7 @@ try:
             current_loss += loss
 
             iteration += 1
+            tot_iteration += 1
 
             # Print epoch number, loss, name and guess
             if iteration % print_every_iteration == 0:
@@ -195,7 +197,7 @@ try:
             # Add current loss avg to list of losses
             if iteration % plot_every_iteration == 0:
                 avg_loss = current_loss / plot_every_iteration
-                writer.add_scalar('loss', avg_loss, iteration)
+                writer.add_scalar('loss', avg_loss, tot_iteration)
                 current_loss = 0
 
 
