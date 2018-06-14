@@ -130,11 +130,7 @@ train_loader, validation_loader = train_validation_loaders(d,
 
 best_prec1 = 0
 
-model = PInSoRoRNN(batch_size, d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
-
-# log the graph of the network
-dummy_input = torch.rand(batch_size, seq_size, d.POSES_INPUT_SIZE, requires_grad=True)
-writer.add_graph(model, (dummy_input, ))
+model = PInSoRoRNN(batch_size, d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE, device=device)
 
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -147,6 +143,11 @@ criterion = nn.MultiLabelSoftMarginLoss()
 if args.cuda:
     model.cuda()
     criterion.cuda()
+
+# log the graph of the network
+dummy_input = torch.rand(batch_size, seq_size, d.POSES_INPUT_SIZE, requires_grad=True, device=device)
+writer.add_graph(model, (dummy_input, ))
+
 
 
 start_epoch = 1
@@ -232,7 +233,7 @@ try:
 
 except (Exception, KeyboardInterrupt) as e:
     logging.error(traceback.format_exc())
-    logging.fatal("Exception! Saving the model...")
+    logging.fatal("Exception at epoch %d, iteration %d! Saving the model..." % (epoch, iteration))
 finally:
     if epoch > 1 or iteration > 0: # only save if not a crash during first iteration (ie a bug)
         is_best = prec1 > best_prec1

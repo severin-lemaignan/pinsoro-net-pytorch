@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 
 class PInSoRoRNN(nn.Module):
-    def __init__(self, batch_size, input_dim, hidden_dim, output_dim, num_layers=1):
+    def __init__(self, batch_size, input_dim, hidden_dim, output_dim, device, num_layers=1):
         """
         """
         super(PInSoRoRNN, self).__init__()
+
+        self.device=device
 
         self.num_layers=1
         self.batch_size = batch_size
@@ -33,6 +35,7 @@ class PInSoRoRNN(nn.Module):
                                         3rd dim is the input dim
         """
 
+        #import pdb;pdb.set_trace()
         lstm_out, self.hidden = self.lstm_poses(input, self.hidden)
 
         output_poses = self.i2o_poses(lstm_out)
@@ -54,5 +57,5 @@ class PInSoRoRNN(nn.Module):
               batch.
         :see: https://pytorch.org/docs/stable/nn.html#torch.nn.LSTM
         """
-        return (torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True),
-                torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True))
+        return (torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True, device=self.device),
+                torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True, device=self.device))
