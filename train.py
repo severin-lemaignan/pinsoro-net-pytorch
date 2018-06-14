@@ -52,9 +52,8 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
     model.hidden = model.init_hidden()
 
     # pass minibatches of data to the RNN
-    output, hidden = model(input_tensor, hidden)
+    output = model(input_tensor)
 
-    #import pdb;pdb.set_trace()
     loss = criterion(output, annotations_tensor)
     loss.backward()
 
@@ -131,10 +130,10 @@ train_loader, validation_loader = train_validation_loaders(d,
 
 best_prec1 = 0
 
-model = PInSoRoRNN(batch_size, seq_size, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
+model = PInSoRoRNN(batch_size, d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE)
 
 # log the graph of the network
-dummy_input = torch.rand(1, 1, d.POSES_INPUT_SIZE, requires_grad=True)
+dummy_input = torch.rand(batch_size, seq_size, d.POSES_INPUT_SIZE, requires_grad=True)
 writer.add_graph(model, (dummy_input, ))
 
 

@@ -83,6 +83,7 @@ class PInSoRoDataset(Dataset):
         self.device=device
         self.path = path
         self.batch_size = batch_size
+        self.seq_size = seq_size
 
         # read headers + one row of data
         sample_r = pd.read_csv(path, nrows=1)
@@ -190,7 +191,8 @@ class PInSoRoDataset(Dataset):
 
             self.current_chunk_idx += 1
 
-        poses_np = self.current_chunk.iloc[chunk_offset, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
+        #import pdb;pdb.set_trace()
+        poses_np = self.current_chunk.iloc[chunk_offset:chunk_offset + self.seq_size, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
         poses_np = self.fill_NaN_with_unif_rand(poses_np)
 
         poses_tensor = torch.tensor(
@@ -198,9 +200,13 @@ class PInSoRoDataset(Dataset):
                             requires_grad=True
                        )
             
-        annotations_tensor = self.makeAnnotationTensor(self.current_chunk.iloc[chunk_offset, self.ANNOTATIONS_IDX:self.ANNOTATIONS_IDX+6], self.constructs_class)
+        # the annotations we need are the *last* in the returned sequence
+        annotations_tensor = self.makeAnnotationTensor(
+                        self.current_chunk.iloc[
+                                chunk_offset + self.seq_size-1, 
+                                self.ANNOTATIONS_IDX:self.ANNOTATIONS_IDX+6], 
+                        self.constructs_class)
 
-        #import pdb;pdb.set_trace()
         return poses_tensor, annotations_tensor
 
 def collate_minibatch(batch):
