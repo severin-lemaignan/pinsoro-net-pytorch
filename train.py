@@ -291,7 +291,7 @@ try:
                 avg_loss = current_loss / eval_every_iteration
                 avg_accuracy = current_accuracy / eval_every_iteration
 
-                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration*batch_size / len(train_loader) * 100, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
+                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration / len(train_loader) * 100, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
 
                 current_loss = 0
                 current_accuracy = 0
