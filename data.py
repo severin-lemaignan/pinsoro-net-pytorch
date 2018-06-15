@@ -106,7 +106,7 @@ class PInSoRoDataset(Dataset):
 
         if chunksize == 0:
             chunksize = self.nb_samples
-            logging.info("Loading whole CSV file in one single chunks (set --chunk-size to do otherwise)")
+            logging.info("Loading whole CSV file in one single chunk (set --chunk-size to do otherwise)")
             self.current_chunk =pd.read_csv(self.path, 
                                                 skiprows= 1, # skip header
                                                 names=self.dtypes.keys(),
@@ -214,17 +214,20 @@ def collate_minibatch(batch):
     return [torch.stack(samples, 0) for samples in transposed]
 
 
-def train_validation_loaders(dataset, valid_fraction =0.1, **kwargs):
+def train_validation_loaders(dataset, valid_fraction=0.2, randomize_split=True, **kwargs):
     """
-    Borrowed from https://github.com/ZmeiGorynych/basic_pytorch/blob/master/data_utils/data_sources.py#L24
+    Returns 2 dataloaders, one for training, one for validation.
+    Samples are returned in random order.
+
+    Based on https://github.com/ZmeiGorynych/basic_pytorch/blob/master/data_utils/data_sources.py#L24
     """
     # num_workers
     # batch_size
     num_train = len(dataset)
     indices = list(range(num_train))
-    split = int(math.floor(valid_fraction* num_train))
+    split = int(math.floor(valid_fraction*num_train))
 
-    if not('shuffle' in kwargs and not kwargs['shuffle']):
+    if randomize_split:
             #np.random.seed(random_seed)
             np.random.shuffle(indices)
 
