@@ -63,8 +63,10 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
     loss.backward()
 
     optimizer.step()
+    
+    acc = accuracy(output, annotations_tensor)
 
-    return output, loss.item()
+    return loss.item(), acc
 
 
 
@@ -85,36 +87,31 @@ def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
 
         loss = criterion(output, annotations_tensor)
 
-        #prec1 = accuracy(output, target)
+        acc = accuracy(output, annotations_tensor)
 
-    return loss #, prec1
+    return loss, acc
 
-def accuracy(output, target, k=2):
-    """Computes the precision@k for the specified values of k
-    
-    Based on https://github.com/pytorch/examples/blob/master/imagenet/main.py#L295
+def accuracy(output, target):
     """
+    Compute the average classification accuracy
+
+    :param output: the output of the network (dim NxC, N=batch size, C=nb of classes)
+    :param target: a one-hot vector (dim C) of the target annotations
+    """
+
+    nb_active_classes = int(sum(target[0]).item())
 
     # code to efficiently convert output into one-hot vectors with the k first
     # classes selected:
-    #hotoutput = torch.zeros(output.shape).cuda()
-    #hotoutput.scatter_(1, output.topk(2)[1],1.)
+    hotoutput = torch.zeros(output.shape).cuda()
+    hotoutput.scatter_(1, output.topk(nb_active_classes)[1],1.)
 
-    topk = (2,) # we actually only want to top class
-
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-    return res[0] # we only return the top k for k=1
+    # for each sample, multiply the output one-hot vector by the target one-hot vector, sum, and divide by the nb of classes.
+    # result is 1 if the 2 vectors match, 0<x<1 if only some classes match, 0 if no class match
+    per_sample_accuracy = (hotoutput*target).sum(dim=1) / nb_active_classes
+    
+    # return the average over the whole mini batch
+    return sum(per_sample_accuracy)/output.shape[0]
 
 
 
@@ -173,8 +170,6 @@ learning_rate = 0.05 # If you set this too high, it might explode. If too low, i
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
 
 writer = SummaryWriter('runs/%s' % timestamp)
-# Keep track of losses for plotting
-current_loss = 0
 
 
 d = PInSoRoDataset(args.dataset,
@@ -230,6 +225,9 @@ validation_loader_iterator = iter(validation_loader)
 start_epoch = 1
 start_iteration = 0
 
+current_loss = 0
+current_accuracy = 0
+
 if args.resume:
     # optionally resume from a checkpoint
     if os.path.isfile(args.resume):
@@ -270,8 +268,9 @@ try:
         for poses_tensor, annotations_tensor in train_loader:
 
             #import pdb;pdb.set_trace()
-            output, loss = train(model, optimizer, criterion, poses_tensor, annotations_tensor, args.cuda)
+            loss, acc = train(model, optimizer, criterion, poses_tensor, annotations_tensor, args.cuda)
             current_loss += loss
+            current_accuracy += acc
 
             iteration += 1
             tot_iteration += 1
@@ -279,17 +278,22 @@ try:
             # Evaluate the model on the validation dataset and record the losses
             if iteration % eval_every_iteration == 0:
                 avg_loss = current_loss / eval_every_iteration
+                avg_accuracy = current_accuracy / eval_every_iteration
 
-                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f' % (iteration, iteration*batch_size / len(d) * 100, timeSince(start), eval_every_iteration, avg_loss))
+                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration*batch_size / len(train_loader) * 100, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
 
-                writer.add_scalar('loss-train', avg_loss, tot_iteration)
                 current_loss = 0
+                current_accuracy = 0
 
                 valid_poses, valid_annotations = next(validation_loader_iterator)
-                validation_loss = evaluate(model, criterion, 
-                                           valid_poses, valid_annotations,
-                                           args.cuda)
-                writer.add_scalar('loss-validation', validation_loss, tot_iteration)
+                validation_loss, validation_accuracy = evaluate(model, criterion, 
+                                                                valid_poses, valid_annotations,
+                                                                args.cuda)
+                writer.add_scalars('cross-entropy', {'train': avg_loss,
+                                                    'eval': validation_loss}, tot_iteration)
+                writer.add_scalars('accuracy', {'train': avg_accuracy,
+                                                'eval': validation_accuracy}, tot_iteration)
+
 
 
             if iteration % save_every_iteration == 0:
