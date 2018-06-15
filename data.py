@@ -163,7 +163,7 @@ class PInSoRoDataset(Dataset):
         return tensor
 
     def __len__(self):
-        return self.nb_samples - self.nb_samples % self.batch_size
+        return self.nb_samples - self.nb_samples % self.batch_size - self.seq_size
 
     def fill_NaN_with_unif_rand(self, a):
         m = np.isnan(a) # mask of NaNs
