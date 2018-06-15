@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class PInSoRoRNN(nn.Module):
     def __init__(self, batch_size, input_dim, hidden_dim, output_dim, device, num_layers=1):
@@ -21,13 +22,14 @@ class PInSoRoRNN(nn.Module):
                                   dropout=0
                                   )
 
-        self.i2o_poses = nn.Linear(hidden_dim, output_dim)
+        self.fc1 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
 
         self.softmax = nn.LogSoftmax(dim=1)
 
         self.hidden = self.init_hidden()
 
-    def forward(self, input):
+    def forward(self, x):
         """
         :param input: a 3D tensor - because of batch_first=True in LSTM ctor,
                                         1st dim is the batch, 
@@ -35,12 +37,12 @@ class PInSoRoRNN(nn.Module):
                                         3rd dim is the input dim
         """
 
-        #import pdb;pdb.set_trace()
-        lstm_out, self.hidden = self.lstm_poses(input, self.hidden)
+        x, self.hidden = self.lstm_poses(x, self.hidden)
 
-        output_poses = self.i2o_poses(lstm_out)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
 
-        output = self.softmax(output_poses)
+        output = self.softmax(x)
 
         # return the prediction for the last datapoint in the sequence
         # ie: can we predict the state of the interaction after observing the sequence?
