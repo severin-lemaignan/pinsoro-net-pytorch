@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 import math
 
+import cProfile, pstats, io
 
 import torch
 import torch.nn as nn
@@ -140,11 +141,16 @@ parser = argparse.ArgumentParser(description='PInSoRo-net -- PyTorch implementat
 parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
 parser.add_argument('--chunk-size', type=int, default=0, metavar='N', help='chunk size (default: load the whole dataset in one go)')
+parser.add_argument('--num-workers', type=int, default=1, metavar='N', help='number of workers to load the data')
 parser.add_argument('--cuda', action='store_true', help='use CUDA')
+parser.add_argument('--profile', action='store_true', help='Profile the training. Press Ctrl+C to stop.')
 parser.add_argument('--resume', help='partially trained model to reuse as starting point')
 parser.add_argument("dataset", help="path to the PInSoRo CSV dataset")
 
 args = parser.parse_args()
+
+if args.profile:
+    pr = cProfile.Profile()
 
 if torch.cuda.is_available():
     if not args.cuda:
@@ -157,7 +163,7 @@ batch_size = args.batch_size
 
 dataset_validation_fraction=0.2
 
-n_workers = 8
+n_workers = args.num_workers
 n_hidden = 256
 
 seq_size = 300 # 300 points at 30FPS = 10 sec of interaction
@@ -252,11 +258,14 @@ if start_epoch == 1 and start_iteration == 0:
 
 start = time.time()
 
-
 prec1 = 0
 
 iteration = start_iteration
 tot_iteration = start_iteration
+
+if args.profile:
+    logging.warning("STARTING PROFILING -- press Ctrl+C to stop")
+    pr.enable()
 
 try:
     for epoch in range(start_epoch, n_epochs + 1):
@@ -309,9 +318,14 @@ try:
 
 except (Exception, KeyboardInterrupt) as e:
     logging.error(traceback.format_exc())
-    logging.fatal("Exception at epoch %d, iteration %d! Saving the model..." % (epoch, iteration))
+    logging.fatal("Exception at epoch %d, iteration %d!" % (epoch, iteration))
 finally:
+    if args.profile:
+        logging.warning("STOPPING PROFILING")
+        pr.disable()
+
     if epoch > 1 or iteration > 0: # only save if not a crash during first iteration (ie a bug)
+        logging.info("Saving the model...")
         is_best = prec1 > best_prec1
         save_checkpoint({
             'epoch': epoch,
@@ -323,4 +337,11 @@ finally:
             False,
             os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
 
+    if args.profile:
+        s = io.StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats(20)
+        logging.warning("PROFILING RESULTS")
+        print(s.getvalue())
 
