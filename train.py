@@ -41,12 +41,9 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     model.train()
 
-    softmax = nn.Softmax(dim=1)
-
     if cuda:
         input_tensor = input_tensor.cuda()
         annotations_tensor = annotations_tensor.cuda()
-        softmax = softmax.cuda()
 
     # Pytorch accumulates gradients.
     # We need to clear them out before each instance
@@ -62,7 +59,7 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     #import pdb;pdb.set_trace()
 
-    loss = criterion(softmax(output), annotations_tensor)
+    loss = criterion(output, annotations_tensor)
     loss.backward()
 
     optimizer.step()
@@ -76,12 +73,9 @@ def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
     # Turn on evaluation mode which disables dropout.
     model.eval()
 
-    softmax = nn.Softmax(dim=1)
-
     if cuda:
         input_tensor = input_tensor.cuda()
         annotations_tensor = annotations_tensor.cuda()
-        softmax = softmax.cuda()
 
     model.hidden = model.init_hidden()
 
@@ -89,7 +83,7 @@ def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
         # pass minibatches of data to the RNN
         output = model(input_tensor)
 
-        loss = criterion(softmax(output), annotations_tensor)
+        loss = criterion(output, annotations_tensor)
 
         #prec1 = accuracy(output, target)
 
@@ -204,8 +198,8 @@ optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 #criterion = nn.NLLLoss()
 #criterion = nn.MultiLabelSoftMarginLoss()
 
-# https://pytorch.org/docs/stable/nn.html#torch.nn.BCELoss
-criterion = nn.BCELoss()
+# https://pytorch.org/docs/stable/nn.html#torch.nn.BCEWithLogitsLoss
+criterion = nn.BCEWithLogitsLoss()
 
 if args.cuda:
     model.cuda()
