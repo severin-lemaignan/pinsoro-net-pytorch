@@ -40,7 +40,7 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     model.train()
 
-    softmax = nn.Softmax()
+    softmax = nn.Softmax(dim=1)
 
     if cuda:
         input_tensor = input_tensor.cuda()
@@ -61,12 +61,66 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     #import pdb;pdb.set_trace()
 
-    loss = criterion(softmax(output, dim=1), annotations_tensor)
+    loss = criterion(softmax(output), annotations_tensor)
     loss.backward()
 
     optimizer.step()
 
     return output, loss.item()
+
+
+
+def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
+
+    # Turn on evaluation mode which disables dropout.
+    model.eval()
+
+    softmax = nn.Softmax(dim=1)
+
+    if cuda:
+        input_tensor = input_tensor.cuda()
+        annotations_tensor = annotations_tensor.cuda()
+        softmax = softmax.cuda()
+
+    model.hidden = model.init_hidden()
+
+    with torch.no_grad():
+        # pass minibatches of data to the RNN
+        output = model(input_tensor)
+
+        loss = criterion(softmax(output), annotations_tensor)
+
+        #prec1 = accuracy(output, target)
+
+    return loss #, prec1
+
+def accuracy(output, target, k=2):
+    """Computes the precision@k for the specified values of k
+    
+    Based on https://github.com/pytorch/examples/blob/master/imagenet/main.py#L295
+    """
+
+    # code to efficiently convert output into one-hot vectors with the k first
+    # classes selected:
+    #hotoutput = torch.zeros(output.shape).cuda()
+    #hotoutput.scatter_(1, output.topk(2)[1],1.)
+
+    topk = (2,) # we actually only want to top class
+
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+    return res[0] # we only return the top k for k=1
+
 
 
 def timeSince(since):
@@ -101,6 +155,8 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 batch_size = args.batch_size
 
+dataset_validation_fraction=0.2
+
 n_workers = 8
 n_hidden = 256
 
@@ -108,8 +164,7 @@ seq_size = 300 # 300 points at 30FPS = 10 sec of interaction
 
 n_epochs = args.epochs
 
-print_every_iteration = 50
-plot_every_iteration = 50
+eval_every_iteration = 50
 
 save_every_iteration = 1000
 
@@ -129,11 +184,7 @@ d = PInSoRoDataset(args.dataset,
                    constructs_class=SOCIAL_ATTITUDE, 
                    chunksize=args.chunk_size)
 
-train_loader, validation_loader = train_validation_loaders(d,
-                                                           batch_size=batch_size, 
-                                                           num_workers=1,
-                                                           shuffle=False)
-
+logging.info("I'm going to use %d sequences of %d points for training, and %d sequences for validation (%d%%)" % (len(d) * (1-dataset_validation_fraction), seq_size, len(d) * dataset_validation_fraction, dataset_validation_fraction * 100))
 
 best_prec1 = 0
 
@@ -160,6 +211,22 @@ writer.add_graph(model, (dummy_input, ))
 
 
 
+#####################################################################################
+#####################################################################################
+#########  DATA LOADERS
+
+#from torch.utils.data import DataLoader
+#loader = DataLoader(d, batch_size=batch_size, num_workers=n_workers, shuffle=False, collate_fn=collate_minibatch)
+
+train_loader, validation_loader = train_validation_loaders(d,
+                                                           valid_fraction=dataset_validation_fraction,
+                                                           randomize_split=True,
+                                                           batch_size=batch_size, 
+                                                           num_workers=n_workers)
+
+validation_loader_iterator = iter(validation_loader)
+#####################################################################################
+
 start_epoch = 1
 start_iteration = 0
 
@@ -175,19 +242,16 @@ if args.resume:
         optimizer.load_state_dict(checkpoint['optimizer'])
         logging.info("Loaded checkpoint '{}' (epoch {})"
               .format(args.resume, checkpoint['epoch']))
-        logging.info("Continuing training from epoch %d/%d, iteration %d (batch size: %d, %d iterations per epoch)" % (start_epoch, n_epochs, start_iteration, batch_size, int(len(d)/batch_size)))
+        logging.info("Continuing training from epoch %d/%d, iteration %d (batch size: %d, %d iterations per epoch)" % (start_epoch, n_epochs, start_iteration, batch_size, len(train_loader)))
     else:
         logging.warning("No checkpoint found at '{}'".format(args.resume))
 
 if start_epoch == 1 and start_iteration == 0:
-    logging.info("Starting training on %d epochs (batch size: %d, %d iterations per epoch)" % (n_epochs, batch_size, int(len(d)/batch_size)))
+    logging.info("Starting training on %d epochs (batch size: %d, %d iterations per epoch)" % (n_epochs, batch_size, len(train_loader)))
 
 
 start = time.time()
 
-
-from torch.utils.data import DataLoader
-loader = DataLoader(d, batch_size=batch_size, num_workers=n_workers, shuffle=False, collate_fn=collate_minibatch)
 
 prec1 = 0
 
@@ -200,7 +264,7 @@ try:
 
         logging.info('******** EPOCH %d/%d **********' % (epoch, n_epochs))
 
-        for poses_tensor, annotations_tensor in loader:
+        for poses_tensor, annotations_tensor in train_loader:
 
             #import pdb;pdb.set_trace()
             output, loss = train(model, optimizer, criterion, poses_tensor, annotations_tensor, args.cuda)
@@ -209,18 +273,20 @@ try:
             iteration += 1
             tot_iteration += 1
 
-            # Print epoch number, loss, name and guess
-            if iteration % print_every_iteration == 0:
-                #guess, guess_i = categoryFromOutput(output)
-                #correct = '✓' if guess == category else '✗ (%s)' % category
-                #print('%d %d%% (%s) %.4f %s / %s %s' % (epoch, epoch / n_epochs * 100, timeSince(start), loss, line, guess, correct))
-                logging.info('iteration %d (%d%% of epoch) (%s) %.4f' % (iteration, iteration*batch_size / len(d) * 100, timeSince(start), loss))
+            # Evaluate the model on the validation dataset and record the losses
+            if iteration % eval_every_iteration == 0:
+                avg_loss = current_loss / eval_every_iteration
 
-            # Add current loss avg to list of losses
-            if iteration % plot_every_iteration == 0:
-                avg_loss = current_loss / plot_every_iteration
-                writer.add_scalar('loss', avg_loss, tot_iteration)
+                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f' % (iteration, iteration*batch_size / len(d) * 100, timeSince(start), eval_every_iteration, avg_loss))
+
+                writer.add_scalar('loss-train', avg_loss, tot_iteration)
                 current_loss = 0
+
+                valid_poses, valid_annotations = next(validation_loader_iterator)
+                validation_loss = evaluate(model, criterion, 
+                                           valid_poses, valid_annotations,
+                                           args.cuda)
+                writer.add_scalar('loss-validation', validation_loss, tot_iteration)
 
 
             if iteration % save_every_iteration == 0:
