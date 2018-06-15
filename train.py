@@ -38,9 +38,14 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
 
 def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=False):
 
+    model.train()
+
+    softmax = nn.Softmax()
+
     if cuda:
         input_tensor = input_tensor.cuda()
         annotations_tensor = annotations_tensor.cuda()
+        softmax = softmax.cuda()
 
     # Pytorch accumulates gradients.
     # We need to clear them out before each instance
@@ -54,7 +59,9 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
     # pass minibatches of data to the RNN
     output = model(input_tensor)
 
-    loss = criterion(output, annotations_tensor)
+    #import pdb;pdb.set_trace()
+
+    loss = criterion(softmax(output, dim=1), annotations_tensor)
     loss.backward()
 
     optimizer.step()
@@ -138,7 +145,10 @@ optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 # NLLLoss does not calculate loss on a one-hot-vector
 # cf discussion: https://discuss.pytorch.org/t/feature-request-nllloss-crossentropyloss-that-accepts-one-hot-target/2724
 #criterion = nn.NLLLoss()
-criterion = nn.MultiLabelSoftMarginLoss()
+#criterion = nn.MultiLabelSoftMarginLoss()
+
+# https://pytorch.org/docs/stable/nn.html#torch.nn.BCELoss
+criterion = nn.BCELoss()
 
 if args.cuda:
     model.cuda()
