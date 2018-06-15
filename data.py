@@ -48,6 +48,10 @@ SOCIAL_ATTITUDE = [PROSOCIAL,
                 FRUSTRATED,
                 PASSIVE]
 
+CONSTRUCT_CLASSES={"task-engagement":TASK_ENGAGEMENT,
+                   "social-engagement":SOCIAL_ENGAGEMENT,
+                    "social-attitude":SOCIAL_ATTITUDE}
+
 ALL_ANNOTATIONS = TASK_ENGAGEMENT + SOCIAL_ENGAGEMENT + SOCIAL_ATTITUDE
 
 def timeSince(since):

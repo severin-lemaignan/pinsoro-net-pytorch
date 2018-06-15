@@ -26,7 +26,7 @@ except ImportError:
 
 
 from data import PInSoRoDataset, train_validation_loaders, collate_minibatch
-from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE
+from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE, CONSTRUCT_CLASSES
 from model import PInSoRoRNN
 
 MODELS_PATH="models"
@@ -129,7 +129,10 @@ def timeSince(since):
 ################################################################################
 
 parser = argparse.ArgumentParser(description='PInSoRo-net -- PyTorch implementation')
+parser.add_argument('--constructs', default="social-attitude", help='type of social constructs to train against. One of task-engagement, social-engagement, social-attitude or special keyword "all"')
 parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
+parser.add_argument('--lr', type=float, default=0.05, help='learning rate')
+parser.add_argument('--seq-size', type=int, default=300, help='length of the sequence fed to the RNN (default: 300 datapoints, ie 10s at 30FPS)')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
 parser.add_argument('--chunk-size', type=int, default=0, metavar='N', help='chunk size (default: load the whole dataset in one go)')
 parser.add_argument('--num-workers', type=int, default=1, metavar='N', help='number of workers to load the data')
@@ -142,6 +145,13 @@ args = parser.parse_args()
 
 if args.profile:
     pr = cProfile.Profile()
+
+if args.constructs == "all":
+    constructs = None
+    logging.info("Training against all social construct classes")
+else:
+    constructs = CONSTRUCT_CLASSES[args.constructs]
+    logging.info("Training against %s constructs" % args.constructs)
 
 if torch.cuda.is_available():
     if not args.cuda:
@@ -157,7 +167,7 @@ dataset_validation_fraction=0.2
 n_workers = args.num_workers
 n_hidden = 256
 
-seq_size = 300 # 300 points at 30FPS = 10 sec of interaction
+seq_size = args.seq_size
 
 n_epochs = args.epochs
 
@@ -165,18 +175,19 @@ eval_every_iteration = 50
 
 save_every_iteration = 1000
 
-learning_rate = 0.05 # If you set this too high, it might explode. If too low, it might not learn
+learning_rate = args.lr
 
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
+model_id = "%s-%s-lr-%f-seq-size-%d" % (timestamp, args.constructs, learning_rate, seq_size)
 
-writer = SummaryWriter('runs/%s' % timestamp)
+writer = SummaryWriter('runs/%s' % model_id)
 
 
 d = PInSoRoDataset(args.dataset,
                    device=device, 
                    batch_size=batch_size, 
                    seq_size=seq_size, 
-                   constructs_class=SOCIAL_ATTITUDE, 
+                   constructs_class=constructs,
                    chunksize=args.chunk_size)
 
 logging.info("I'm going to use %d sequences of %d points for training, and %d sequences for validation (%d%%)" % (len(d) * (1-dataset_validation_fraction), seq_size, len(d) * dataset_validation_fraction, dataset_validation_fraction * 100))
@@ -308,7 +319,7 @@ try:
                     'optimizer' : optimizer.state_dict(),
                     }, 
                     is_best,
-                    os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
+                    os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (model_id, epoch, iteration)))
 
         iteration = 0
 
@@ -333,7 +344,7 @@ finally:
             'optimizer' : optimizer.state_dict(),
             }, 
             False,
-            os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (timestamp, epoch, iteration)))
+            os.path.join(MODELS_PATH, 'pinsoronet-%s-epoch-%d-iteration-%d.pt' % (model_id, epoch, iteration)))
 
     if args.profile:
         s = io.StringIO()
