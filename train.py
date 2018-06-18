@@ -64,7 +64,7 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     optimizer.step()
     
-    acc = accuracy(output, annotations_tensor)
+    acc = accuracy(output, annotations_tensor, cuda)
 
     return loss.item(), acc
 
@@ -87,23 +87,26 @@ def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
 
         loss = criterion(output, annotations_tensor)
 
-        acc = accuracy(output, annotations_tensor)
+        acc = accuracy(output, annotations_tensor, cuda)
 
     return loss, acc
 
-def accuracy(output, target):
+def accuracy(output, target, cuda=False):
     """
     Compute the average classification accuracy
 
     :param output: the output of the network (dim NxC, N=batch size, C=nb of classes)
-    :param target: a one-hot vector (dim C) of the target annotations
+    :param target: one-hot vectors (dim NxC) of the target annotations
     """
 
     nb_active_classes = int(sum(target[0]).item())
 
     # code to efficiently convert output into one-hot vectors with the k first
     # classes selected:
-    hotoutput = torch.zeros(output.shape).cuda()
+    hotoutput = torch.zeros(output.shape)
+    if cuda:
+        hotoutput=hotoutput.cuda()
+
     hotoutput.scatter_(1, output.topk(nb_active_classes)[1],1.)
 
     # for each sample, multiply the output one-hot vector by the target one-hot vector, sum, and divide by the nb of classes.
@@ -112,6 +115,20 @@ def accuracy(output, target):
     
     # return the average over the whole mini batch
     return sum(per_sample_accuracy)/output.shape[0]
+
+def compute_chance(dim1, dim2, k=2, n=2000):
+
+    def make_rand_one_hot(dim1, dim2,k=2):
+         a=torch.zeros(dim1,dim2)
+         tmp=torch.rand(dim1, dim2)
+         a.scatter_(1, tmp.topk(k)[1],1.)
+         return a
+
+   tot=0
+   for i in range(n):
+       tot+=accuracy(torch.rand(dim1,dim2),make_rand_one_hot(dim1,dim2,k))
+   return tot/n
+
 
 
 
@@ -191,6 +208,10 @@ d = PInSoRoDataset(args.dataset,
                    chunksize=args.chunk_size)
 
 logging.info("I'm going to use %d sequences of %d points for training, and %d sequences for validation (%d%%)" % (len(d) * (1-dataset_validation_fraction), seq_size, len(d) * dataset_validation_fraction, dataset_validation_fraction * 100))
+
+
+chance = compute_chance(batch_size,len(constructs)*2, 2)
+logging.info("Chance accuracy at %.2f" % chance)
 
 best_prec1 = 0
 
@@ -303,7 +324,8 @@ try:
                 writer.add_scalars('cross-entropy', {'train': avg_loss,
                                                     'eval': validation_loss}, tot_iteration)
                 writer.add_scalars('accuracy', {'train': avg_accuracy,
-                                                'eval': validation_accuracy}, tot_iteration)
+                                                'eval': validation_accuracy,
+                                                'chance': chance}, tot_iteration)
 
 
 
