@@ -1,0 +1,4 @@
+models/*.pt
+runs/
+__pycache__
+*.swp
