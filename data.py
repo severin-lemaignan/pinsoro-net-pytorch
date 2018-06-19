@@ -1,6 +1,7 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
+import os
 import math 
 import time
 
@@ -11,6 +12,8 @@ from torch.utils.data.sampler import SubsetRandomSampler
 
 import numpy as np
 import pandas as pd
+
+DATASET_FILENAME="pinsoro-complete"
 
 MISSINGDATA="missingdata"
 
@@ -65,15 +68,12 @@ def timeSince(since):
 class PInSoRoDataset(Dataset):
     """The PInSoRo dataset."""
 
-    def __init__(self, path, device, batch_size, seq_size, constructs_class=None, chunksize=0):
+    def __init__(self, path, device, batch_size, seq_size, constructs_class=None):
         """
-        :param path: (string): Path to the csv file with annotations.
+        :param path: (string): Root of the dataset. Individual (per-recording) datasets are looked up from here.
         :param device: the pytorch device (cpu or cuda)
         :param batch_size: the batch size is used to return a dataset length which is a multiple of it
         :constructs_class: one of ALL_ANNOTATIONS, TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT or SOCIAL_ATTITUDE
-        :param chunksize: nb of CSV rows loaded at the same time. 0 means whole dataset (no chunking)
-        
-
         """
         start = time.time()
 
@@ -85,16 +85,52 @@ class PInSoRoDataset(Dataset):
         self.ANNOTATIONS_OUTPUT_SIZE = len(self.constructs_class) * 2
 
         self.device=device
-        self.path = path
         self.batch_size = batch_size
         self.seq_size = seq_size
 
+        self.dtypes = None
+
+        paths = self.lookup_data(path)
+
+        self.dataset = {}
+
+        for i, id in enumerate(paths):
+            if self.dtypes is None:
+                self.generate_dtypes(paths[id])
+
+            logging.info("Loading dataset %d/%d: %s" % (i+1, len(paths), paths[id]))
+            self.dataset[id] = pd.read_csv(paths[id], 
+                                           skiprows= 1, # skip header
+                                           names=self.dtypes.keys(),
+                                           dtype=self.dtypes)
+
+        logging.info("Extracting valid samples...")
+
+        tot_samples = 0
+
+        # This list holds a long list of tuple (dataset id, index), one per sample
+        self.indices = []
+
+        for id, data in self.dataset.items():
+            tot_samples += len(data)
+            #import pdb;pdb.set_trace()
+            indices = self.valid_samples_indices(data)
+
+            self.indices += [(id, idx) for idx in indices]
+            logging.info(".")
+
+        logging.info("Kept %d samples (%d%% of the total)" % (len(self.indices), len(self.indices) * 100./tot_samples))
+
+        logging.info("Dataset initialization took %s" % timeSince(start))
+
+    def generate_dtypes(self, path):
         # read headers + one row of data
+        self.dtypes={}
+
         sample_r = pd.read_csv(path, nrows=1)
         # extract data types
         orig_dtypes = sample_r.drop('id',axis=1).dtypes
         # select np.float32 (instead of default float64) for all columns except timestamp
-        self.dtypes = {}
 
         self.dtypes.update({key:np.float32 for key, value in orig_dtypes.items() if "face" in key})
         self.dtypes.update({key:np.float32 for key, value in orig_dtypes.items() if "skel" in key})
@@ -102,32 +138,58 @@ class PInSoRoDataset(Dataset):
         self.dtypes.update({key:np.object for key in orig_dtypes.keys()[431:438]})
 
 
-        logging.info("Opening CSV file and counting samples...")
-        self.nb_samples = sum(1 for line in open(path)) - 1
-        logging.info("Found %d samples" % self.nb_samples)
+    def has_annotations(self, row):
 
-        self.current_chunk_idx = 0
+        if self.constructs_class == TASK_ENGAGEMENT:
+            return not row[['purple_child_task_engagement', 'yellow_child_task_engagement']].isnull().values.any()
 
-        if chunksize == 0:
-            chunksize = self.nb_samples
-            logging.info("Loading whole CSV file in one single chunk (set --chunk-size to do otherwise)")
-            self.current_chunk =pd.read_csv(self.path, 
-                                                skiprows= 1, # skip header
-                                                names=self.dtypes.keys(),
-                                                dtype=self.dtypes)
-        else:
-            logging.info("Loading CSV file in chunks (chunksize=%d)" % chunksize)
-            self.current_chunk = next(
-                                    pd.read_csv(self.path, 
-                                                skiprows= 1, # skip header
-                                                chunksize=chunksize, 
-                                                names=self.dtypes.keys(),
-                                                dtype=self.dtypes)
-                                    )
+        if self.constructs_class == SOCIAL_ENGAGEMENT:
+            return not row[['purple_child_social_engagement', 'yellow_child_social_engagement']].isnull().values.any()
 
-        self.chunksize = chunksize
+        if self.constructs_class == SOCIAL_ATTITUDE:
+            return not row[['purple_child_social_attitude', 'yellow_child_social_attitude']].isnull().values.any()
 
-        logging.info("Dataset initialization took %s" % timeSince(start))
+        if self.constructs_class == ALL_ANNOTATIONS:
+            return not row[['purple_child_task_engagement', 'purple_child_social_engagement',
+                            'purple_child_social_attitude', 'yellow_child_task_engagement',
+                            'yellow_child_social_engagement', 'yellow_child_social_attitude']].isnull().values.any()
+
+    def valid_samples_indices(self, data):
+        """
+        Valid sample indices are indices with at least seq_size samples
+        following them, and the *last* sample of the sequence must have
+        annotations.
+
+        """
+
+        indices = []
+
+        idx=0
+        for _, row in data.iterrows():
+            if idx >= self.seq_size and self.has_annotations(row):
+                indices.append(idx-self.seq_size)
+            idx+=1
+
+        return indices
+
+
+    def lookup_data(self, root):
+
+        paths = {}
+
+        logging.info("Looking for recordings...")
+
+        for dirpath, dirs, files in os.walk(root, topdown=False):
+            for name in files:
+                fullpath = os.path.join(dirpath, name)
+                if name.startswith(DATASET_FILENAME) and name.endswith("csv"):
+                    id="%s-%s" % (dirpath.split(os.sep)[-1], name[:-4].split("-")[-1]) # id is recording date (ie folder name) followed by annotator name
+                    paths[id] = fullpath
+
+        logging.info("Found %d recordings with collated dataset (child-child condition only)" % len(paths))
+
+        return paths
+
 
     def makeAnnotationTensor(self, constructs, annotation_set=None):
         """
@@ -167,7 +229,7 @@ class PInSoRoDataset(Dataset):
         return tensor
 
     def __len__(self):
-        return self.nb_samples - self.nb_samples % self.batch_size - self.seq_size
+        return len(self.indices)
 
     def fill_NaN_with_unif_rand(self, a):
         m = np.isnan(a) # mask of NaNs
@@ -177,26 +239,10 @@ class PInSoRoDataset(Dataset):
     def __getitem__(self, idx):
 
 
-        chunk_idx, chunk_offset = idx // self.chunksize, idx % self.chunksize
-
-        # do we need to fetch the next chunk of our CSV file?
-        while chunk_idx > self.current_chunk_idx:
-            logging.info("Fetching next chunk (samples %d to %d)" % (chunk_idx * self.chunksize, (chunk_idx +1)*self.chunksize - 1))
-
-            
-            self.current_chunk = next(
-                                pd.read_csv(self.path, 
-                                            skiprows=self.current_chunk_idx*self.chunksize + 1, # skip header as well
-                                            chunksize=self.chunksize,
-                                            names=self.dtypes.keys(),
-                                            dtype=self.dtypes)
-                                )
-            
-
-            self.current_chunk_idx += 1
+        id, indice = self.indices(idx)
 
         #import pdb;pdb.set_trace()
-        poses_np = self.current_chunk.iloc[chunk_offset:chunk_offset + self.seq_size, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
+        poses_np = self.dataset[id].iloc[indice:indice + self.seq_size, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
         poses_np = self.fill_NaN_with_unif_rand(poses_np)
 
         poses_tensor = torch.tensor(
@@ -206,8 +252,8 @@ class PInSoRoDataset(Dataset):
             
         # the annotations we need are the *last* in the returned sequence
         annotations_tensor = self.makeAnnotationTensor(
-                        self.current_chunk.iloc[
-                                chunk_offset + self.seq_size-1, 
+                        self.dataset[id].iloc[
+                                indice + self.seq_size-1, 
                                 self.ANNOTATIONS_IDX:self.ANNOTATIONS_IDX+6], 
                         self.constructs_class)
 
@@ -253,14 +299,18 @@ def train_validation_loaders(dataset, valid_fraction=0.2, randomize_split=True, 
 if __name__ == "__main__":
     import sys
 
-    device = torch.device("cuda") 
-    #device = torch.device("cpu") 
+    #device = torch.device("cuda") 
+    device = torch.device("cpu") 
 
 
-    d = PInSoRoDataset(sys.argv[1], chunksize=1000, device=device)
+    d = PInSoRoDataset(path=sys.argv[1], 
+                       batch_size=1,
+                       seq_size=2,
+                       constructs_class=SOCIAL_ENGAGEMENT,
+                       device=device)
     print(d[10])
-    loader = DataLoader(d, batch_size=1, num_workers=1, shuffle=False)
-    print(len(d))
-    for batch_idx, data in enumerate(loader):
-        print('batch: {}\tdata: {}'.format(batch_idx, data))
+    #loader = DataLoader(d, batch_size=1, num_workers=1, shuffle=False)
+    #print(len(d))
+    #for batch_idx, data in enumerate(loader):
+    #    print('batch: {}\tdata: {}'.format(batch_idx, data))
     #print(d[0])
