@@ -142,7 +142,7 @@ def lookup_data(root):
     return paths
 
 
-def make_train_test_datasets(path, test_fraction, device, seq_size, constructs_class=None):
+def make_train_test_datasets(path, test_fraction, device, seq_size, constructs_class=None, sanity_check=False):
     """
     :param path: (string): Root of the dataset. Individual (per-recording) datasets are looked up from here.
     :param device: the pytorch device (cpu or cuda)
@@ -181,6 +181,11 @@ def make_train_test_datasets(path, test_fraction, device, seq_size, constructs_c
 
         indices_per_id[id] = indices
 
+        # only doing a sanity check? -> load 2 datasets, one for training, one for testing
+        if sanity_check and i==1:
+            logging.warning("SANITY CHECK MODE: Stopping dataset loading here")
+            break
+
     logging.info("Kept %d samples (%d%% of the total)" % (tot_valid_samples, tot_valid_samples * 100./tot_samples))
 
     ##### Split the recordings ID into training and testing sets ####
@@ -188,7 +193,10 @@ def make_train_test_datasets(path, test_fraction, device, seq_size, constructs_c
     split = int(math.floor(test_fraction*len(ids)))
     np.random.shuffle(ids)
 
-    train_ids, test_ids = ids[split:], ids[:split]
+    if sanity_check:
+        train_ids, test_ids = ids[1:], ids[:1]
+    else:
+        train_ids, test_ids = ids[split:], ids[:split]
 
     # This list holds a long list of tuple (dataset id, index), one per sample
     train_indices = [(id, idx) for id in train_ids for idx in indices_per_id[id]]

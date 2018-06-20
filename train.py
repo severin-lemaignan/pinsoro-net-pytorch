@@ -155,6 +155,7 @@ parser.add_argument('--seq-size', type=int, default=300, help='length of the seq
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
 parser.add_argument('--num-workers', type=int, default=4, metavar='N', help='number of workers to load the data')
 parser.add_argument('--cuda', action='store_true', help='use CUDA')
+parser.add_argument('--sanity-check', action='store_true', help='if set, only load a small subset of the dataset, for quick testing')
 parser.add_argument('--profile', action='store_true', help='Profile the training. Press Ctrl+C to stop.')
 parser.add_argument('--resume', help='partially trained model to reuse as starting point')
 parser.add_argument("datasets_root", help="path to the root of PInSoRo CSV datasets")
@@ -205,7 +206,8 @@ train_dataset, test_dataset = make_train_test_datasets(path=args.datasets_root,
                                                        test_fraction=dataset_test_fraction,
                                                        device=device, 
                                                        seq_size=seq_size, 
-                                                       constructs_class=constructs)
+                                                       constructs_class=constructs,
+                                                       sanity_check=args.sanity_check)
 
 
 
