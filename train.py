@@ -151,7 +151,6 @@ parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
 parser.add_argument('--lr', type=float, default=0.05, help='learning rate')
 parser.add_argument('--seq-size', type=int, default=300, help='length of the sequence fed to the RNN (default: 300 datapoints, ie 10s at 30FPS)')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
-parser.add_argument('--chunk-size', type=int, default=0, metavar='N', help='chunk size (default: load the whole dataset in one go)')
 parser.add_argument('--num-workers', type=int, default=1, metavar='N', help='number of workers to load the data')
 parser.add_argument('--cuda', action='store_true', help='use CUDA')
 parser.add_argument('--profile', action='store_true', help='Profile the training. Press Ctrl+C to stop.')
@@ -204,8 +203,7 @@ d = PInSoRoDataset(args.dataset,
                    device=device, 
                    batch_size=batch_size, 
                    seq_size=seq_size, 
-                   constructs_class=constructs,
-                   chunksize=args.chunk_size)
+                   constructs_class=constructs)
 
 logging.info("I'm going to use %d sequences of %d points for training, and %d sequences for validation (%d%%)" % (len(d) * (1-dataset_validation_fraction), seq_size, len(d) * dataset_validation_fraction, dataset_validation_fraction * 100))
 
