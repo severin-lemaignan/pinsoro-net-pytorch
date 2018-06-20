@@ -195,7 +195,7 @@ save_every_iteration = 1000
 learning_rate = args.lr
 
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
-model_id = "%s-%s-lr-%f-seq-size-%d" % (timestamp, args.constructs, learning_rate, seq_size)
+model_id = "%s-%s-%s-lr-%f-seq-size-%d-num-layers-%d" % (timestamp, PInSoRoRNN.version, args.constructs, learning_rate, seq_size, args.num_lstm_layers)
 
 writer = SummaryWriter('runs/%s' % model_id)
 
@@ -324,7 +324,7 @@ try:
                 avg_loss = current_loss / eval_every_iteration
                 avg_accuracy = current_accuracy / eval_every_iteration
 
-                logging.info('iteration %d (%d%% of epoch %d) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration / len(train_loader) * 100, epoch, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
+                logging.info('[%s] iteration %d (%d%% of epoch %d) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (model_id, iteration, iteration / len(train_loader) * 100, epoch, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
 
                 current_loss = 0
                 current_accuracy = 0
