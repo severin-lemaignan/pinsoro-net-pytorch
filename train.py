@@ -221,7 +221,8 @@ model = PInSoRoRNN(input_dim=train_dataset.POSES_INPUT_SIZE,
                    device=device)
 
 
-optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+#optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 # NLLLoss does not calculate loss on a one-hot-vector
 # cf discussion: https://discuss.pytorch.org/t/feature-request-nllloss-crossentropyloss-that-accepts-one-hot-target/2724
