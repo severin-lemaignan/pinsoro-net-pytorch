@@ -3,15 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class PInSoRoRNN(nn.Module):
-    def __init__(self, batch_size, input_dim, hidden_dim, output_dim, device, num_layers=1):
+    def __init__(self, input_dim, hidden_dim, output_dim, device, num_layers=1):
         """
         """
         super(PInSoRoRNN, self).__init__()
 
         self.device=device
 
-        self.num_layers=1
-        self.batch_size = batch_size
+        self.num_layers=num_layers
 
         self.hidden_dim = hidden_dim
 
@@ -27,7 +26,7 @@ class PInSoRoRNN(nn.Module):
 
         self.softmax = nn.LogSoftmax(dim=1)
 
-        self.hidden = self.init_hidden()
+
 
     def forward(self, x):
         """
@@ -48,8 +47,12 @@ class PInSoRoRNN(nn.Module):
         # ie: can we predict the state of the interaction after observing the sequence?
         return output[:,-1,:]
 
-    def init_hidden(self):
+    def init_hidden(self, input_shape):
         """
+
+        :param input_shape: the shape of the network's input tensor. Only the
+        1st member of the shape tuple (the batch_size) is used.
+
         returns (h_0, c_0):
             - h_0 of shape (num_layers * num_directions, batch, hidden_size):
               tensor containing the initial hidden state for each element in
@@ -59,5 +62,5 @@ class PInSoRoRNN(nn.Module):
               batch.
         :see: https://pytorch.org/docs/stable/nn.html#torch.nn.LSTM
         """
-        return (torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True, device=self.device),
-                torch.zeros(self.num_layers, self.batch_size, self.hidden_dim, requires_grad=True, device=self.device))
+        return (torch.zeros(self.num_layers, input_shape[0], self.hidden_dim, requires_grad=True, device=self.device),
+                torch.zeros(self.num_layers, input_shape[0], self.hidden_dim, requires_grad=True, device=self.device))

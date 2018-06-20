@@ -33,7 +33,6 @@ from model import PInSoRoRNN
 
 MODELS_PATH="models"
 
-
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
@@ -54,7 +53,7 @@ def train(model, optimizer, criterion, input_tensor, annotations_tensor, cuda=Fa
 
     # Also, we need to clear out the hidden state of the LSTM,
     # detaching it from its history on the last instance.
-    model.hidden = model.init_hidden()
+    model.hidden = model.init_hidden(input_tensor.shape)
 
     # pass minibatches of data to the RNN
     output = model(input_tensor)
@@ -81,7 +80,7 @@ def evaluate(model, criterion, input_tensor, annotations_tensor, cuda=False):
         input_tensor = input_tensor.cuda()
         annotations_tensor = annotations_tensor.cuda()
 
-    model.hidden = model.init_hidden()
+    model.hidden = model.init_hidden(input_tensor.shape)
 
     with torch.no_grad():
         # pass minibatches of data to the RNN
@@ -216,7 +215,10 @@ logging.info("Chance accuracy at %.2f" % chance)
 
 best_prec1 = 0
 
-model = PInSoRoRNN(batch_size, train_dataset.POSES_INPUT_SIZE, n_hidden, train_dataset.ANNOTATIONS_OUTPUT_SIZE, device=device)
+model = PInSoRoRNN(train_dataset.POSES_INPUT_SIZE, 
+                   n_hidden, 
+                   train_dataset.ANNOTATIONS_OUTPUT_SIZE, 
+                   device=device)
 
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -235,6 +237,7 @@ if args.cuda:
 
 # log the graph of the network
 dummy_input = torch.rand(batch_size, seq_size, train_dataset.POSES_INPUT_SIZE, requires_grad=True, device=device)
+model.hidden = model.init_hidden(dummy_input.shape)
 writer.add_graph(model, (dummy_input, ))
 
 
