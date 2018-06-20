@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class PInSoRoRNN(nn.Module):
+    version="v3"
+
     def __init__(self, input_dim, hidden_dim, output_dim, device, num_layers=1):
         """
         """
@@ -16,13 +18,17 @@ class PInSoRoRNN(nn.Module):
 
         self.lstm_poses = nn.LSTM(input_size=input_dim,
                                   hidden_size=hidden_dim,
-                                  num_layers=1,
+                                  num_layers=self.num_layers,
                                   batch_first=True, # the input and output tensors are provided as (batch, seq, feature)
                                   dropout=0
                                   )
 
         self.fc1 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc4 = nn.Linear(hidden_dim, hidden_dim)
+
+        self.fc_out = nn.Linear(hidden_dim, output_dim)
 
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -40,6 +46,9 @@ class PInSoRoRNN(nn.Module):
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = F.relu(self.fc_out(x))
 
         output = self.softmax(x)
 
