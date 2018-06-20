@@ -17,6 +17,8 @@ import cProfile, pstats, io
 
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import RandomSampler
 
 try:
     from tensorboardX import SummaryWriter 
@@ -25,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 
-from data import PInSoRoDataset, train_validation_loaders, collate_minibatch
+from data import make_train_test_datasets, collate_minibatch
 from data import TASK_ENGAGEMENT, SOCIAL_ENGAGEMENT, SOCIAL_ATTITUDE, CONSTRUCT_CLASSES
 from model import PInSoRoRNN
 
@@ -151,11 +153,11 @@ parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
 parser.add_argument('--lr', type=float, default=0.05, help='learning rate')
 parser.add_argument('--seq-size', type=int, default=300, help='length of the sequence fed to the RNN (default: 300 datapoints, ie 10s at 30FPS)')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
-parser.add_argument('--num-workers', type=int, default=1, metavar='N', help='number of workers to load the data')
+parser.add_argument('--num-workers', type=int, default=4, metavar='N', help='number of workers to load the data')
 parser.add_argument('--cuda', action='store_true', help='use CUDA')
 parser.add_argument('--profile', action='store_true', help='Profile the training. Press Ctrl+C to stop.')
 parser.add_argument('--resume', help='partially trained model to reuse as starting point')
-parser.add_argument("dataset", help="path to the PInSoRo CSV dataset")
+parser.add_argument("datasets_root", help="path to the root of PInSoRo CSV datasets")
 
 args = parser.parse_args()
 
@@ -178,7 +180,7 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 batch_size = args.batch_size
 
-dataset_validation_fraction=0.2
+dataset_test_fraction=0.2
 
 n_workers = args.num_workers
 n_hidden = 256
@@ -199,13 +201,12 @@ model_id = "%s-%s-lr-%f-seq-size-%d" % (timestamp, args.constructs, learning_rat
 writer = SummaryWriter('runs/%s' % model_id)
 
 
-d = PInSoRoDataset(args.dataset,
-                   device=device, 
-                   batch_size=batch_size, 
-                   seq_size=seq_size, 
-                   constructs_class=constructs)
+train_dataset, test_dataset = make_train_test_datasets(path=args.datasets_root,
+                                                       test_fraction=dataset_test_fraction,
+                                                       device=device, 
+                                                       seq_size=seq_size, 
+                                                       constructs_class=constructs)
 
-logging.info("I'm going to use %d sequences of %d points for training, and %d sequences for validation (%d%%)" % (len(d) * (1-dataset_validation_fraction), seq_size, len(d) * dataset_validation_fraction, dataset_validation_fraction * 100))
 
 
 chance = compute_chance(batch_size,len(constructs)*2, 2)
@@ -213,7 +214,7 @@ logging.info("Chance accuracy at %.2f" % chance)
 
 best_prec1 = 0
 
-model = PInSoRoRNN(batch_size, d.POSES_INPUT_SIZE, n_hidden, d.ANNOTATIONS_OUTPUT_SIZE, device=device)
+model = PInSoRoRNN(batch_size, train_dataset.POSES_INPUT_SIZE, n_hidden, train_dataset.ANNOTATIONS_OUTPUT_SIZE, device=device)
 
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -231,7 +232,7 @@ if args.cuda:
     criterion.cuda()
 
 # log the graph of the network
-dummy_input = torch.rand(batch_size, seq_size, d.POSES_INPUT_SIZE, requires_grad=True, device=device)
+dummy_input = torch.rand(batch_size, seq_size, train_dataset.POSES_INPUT_SIZE, requires_grad=True, device=device)
 writer.add_graph(model, (dummy_input, ))
 
 
@@ -240,16 +241,23 @@ writer.add_graph(model, (dummy_input, ))
 #####################################################################################
 #########  DATA LOADERS
 
-#from torch.utils.data import DataLoader
-#loader = DataLoader(d, batch_size=batch_size, num_workers=n_workers, shuffle=False, collate_fn=collate_minibatch)
 
-train_loader, validation_loader = train_validation_loaders(d,
-                                                           valid_fraction=dataset_validation_fraction,
-                                                           randomize_split=True,
-                                                           batch_size=batch_size, 
-                                                           num_workers=n_workers)
+train_sampler = RandomSampler(train_dataset)
+train_loader = DataLoader(train_dataset,
+                          sampler=train_sampler,
+                          collate_fn=collate_minibatch,
+                          batch_size=batch_size,
+                          num_workers=n_workers)
 
-validation_loader_iterator = iter(validation_loader)
+test_sampler = RandomSampler(test_dataset)
+test_loader = DataLoader(test_dataset,
+                          sampler=test_sampler,
+                          collate_fn=collate_minibatch,
+                          batch_size=batch_size,
+                          num_workers=n_workers)
+
+
+test_loader_iterator = iter(test_loader)
 #####################################################################################
 
 start_epoch = 1
@@ -315,14 +323,14 @@ try:
                 current_loss = 0
                 current_accuracy = 0
 
-                valid_poses, valid_annotations = next(validation_loader_iterator)
-                validation_loss, validation_accuracy = evaluate(model, criterion, 
-                                                                valid_poses, valid_annotations,
-                                                                args.cuda)
+                test_poses, test_annotations = next(test_loader_iterator)
+                test_loss, test_accuracy = evaluate(model, criterion, 
+                                                    test_poses, test_annotations,
+                                                    args.cuda)
                 writer.add_scalars('cross-entropy', {'train': avg_loss,
-                                                    'eval': validation_loss}, tot_iteration)
+                                                    'eval': test_loss}, tot_iteration)
                 writer.add_scalars('accuracy', {'train': avg_accuracy,
-                                                'eval': validation_accuracy,
+                                                'eval': test_accuracy,
                                                 'chance': chance}, tot_iteration)
 
 
