@@ -94,6 +94,11 @@ class PInSoRoDataset(Dataset):
 
         self.dataset = {}
 
+        tot_samples = 0
+        # This list holds a long list of tuple (dataset id, index), one per sample
+        self.indices = []
+
+
         for i, id in enumerate(paths):
             if self.dtypes is None:
                 self.generate_dtypes(paths[id])
@@ -104,20 +109,13 @@ class PInSoRoDataset(Dataset):
                                            names=self.dtypes.keys(),
                                            dtype=self.dtypes)
 
-        logging.info("Extracting valid samples...")
-
-        tot_samples = 0
-
-        # This list holds a long list of tuple (dataset id, index), one per sample
-        self.indices = []
-
-        for id, data in self.dataset.items():
-            tot_samples += len(data)
+            logging.info("Extracting valid samples...")
+            tot_samples += len(self.dataset[id])
             #import pdb;pdb.set_trace()
-            indices = self.valid_samples_indices(data)
+            indices = self.valid_samples_indices(self.dataset[id])
 
             self.indices += [(id, idx) for idx in indices]
-            logging.info(".")
+
 
         logging.info("Kept %d samples (%d%% of the total)" % (len(self.indices), len(self.indices) * 100./tot_samples))
 
@@ -138,21 +136,24 @@ class PInSoRoDataset(Dataset):
         self.dtypes.update({key:np.object for key in orig_dtypes.keys()[431:438]})
 
 
-    def has_annotations(self, row):
+    def missing_annotations(self, data):
+        """ Returns a 1-dimensional numpy array matching the num of rows in `data`, where True means that
+        the annotations are missing for this specific sample.
+        """
 
         if self.constructs_class == TASK_ENGAGEMENT:
-            return not row[['purple_child_task_engagement', 'yellow_child_task_engagement']].isnull().values.any()
+            return data[['purple_child_task_engagement', 'yellow_child_task_engagement']].isnull().values.any(axis=1)
 
         if self.constructs_class == SOCIAL_ENGAGEMENT:
-            return not row[['purple_child_social_engagement', 'yellow_child_social_engagement']].isnull().values.any()
+            return data[['purple_child_social_engagement', 'yellow_child_social_engagement']].isnull().values.any(axis=1)
 
         if self.constructs_class == SOCIAL_ATTITUDE:
-            return not row[['purple_child_social_attitude', 'yellow_child_social_attitude']].isnull().values.any()
+            return data[['purple_child_social_attitude', 'yellow_child_social_attitude']].isnull().values.any(axis=1)
 
         if self.constructs_class == ALL_ANNOTATIONS:
-            return not row[['purple_child_task_engagement', 'purple_child_social_engagement',
+            return data[['purple_child_task_engagement', 'purple_child_social_engagement',
                             'purple_child_social_attitude', 'yellow_child_task_engagement',
-                            'yellow_child_social_engagement', 'yellow_child_social_attitude']].isnull().values.any()
+                            'yellow_child_social_engagement', 'yellow_child_social_attitude']].isnull().values.any(axis=1)
 
     def valid_samples_indices(self, data):
         """
@@ -165,9 +166,12 @@ class PInSoRoDataset(Dataset):
         indices = []
 
         idx=0
-        for _, row in data.iterrows():
-            if idx >= self.seq_size and self.has_annotations(row):
-                indices.append(idx-self.seq_size)
+        #import pdb;pdb.set_trace()
+        missing_anns = self.missing_annotations(data)
+
+        for missing in missing_anns[self.seq_size:]:
+            if not missing:
+                indices.append(idx)
             idx+=1
 
         return indices
@@ -183,10 +187,13 @@ class PInSoRoDataset(Dataset):
             for name in files:
                 fullpath = os.path.join(dirpath, name)
                 if name.startswith(DATASET_FILENAME) and name.endswith("csv"):
+                    if "no-annotations" in name:
+                        logging.warning("%s is missing annotations. Skipping it." % fullpath)
+                        continue
                     id="%s-%s" % (dirpath.split(os.sep)[-1], name[:-4].split("-")[-1]) # id is recording date (ie folder name) followed by annotator name
                     paths[id] = fullpath
 
-        logging.info("Found %d recordings with collated dataset (child-child condition only)" % len(paths))
+        logging.info("Found %d datasets (child-child condition only) with annotations" % len(paths))
 
         return paths
 
@@ -239,7 +246,7 @@ class PInSoRoDataset(Dataset):
     def __getitem__(self, idx):
 
 
-        id, indice = self.indices(idx)
+        id, indice = self.indices[idx]
 
         #import pdb;pdb.set_trace()
         poses_np = self.dataset[id].iloc[indice:indice + self.seq_size, self.POSES_INPUT_IDX:self.POSES_INPUT_IDX+self.POSES_INPUT_SIZE].astype(np.float32).values
@@ -305,7 +312,7 @@ if __name__ == "__main__":
 
     d = PInSoRoDataset(path=sys.argv[1], 
                        batch_size=1,
-                       seq_size=2,
+                       seq_size=300,
                        constructs_class=SOCIAL_ENGAGEMENT,
                        device=device)
     print(d[10])
