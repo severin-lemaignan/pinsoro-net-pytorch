@@ -10,7 +10,7 @@ import os.path
 import sys
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 
 import cProfile, pstats, io
@@ -135,10 +135,8 @@ def compute_chance(dim1, dim2, k=2, n=2000):
 
 def timeSince(since):
     now = time.time()
-    s = now - since
-    m = math.floor(s / 60)
-    s -= m * 60
-    return '%dm %ds' % (m, s)
+    s = int(now - since)
+    return str(timedelta(seconds=s))
 
 
 
@@ -149,7 +147,8 @@ def timeSince(since):
 parser = argparse.ArgumentParser(description='PInSoRo-net -- PyTorch implementation')
 parser.add_argument('--constructs', default="social-attitude", help='type of social constructs to train against. One of task-engagement, social-engagement, social-attitude or special keyword "all"')
 parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
-parser.add_argument('--lr', type=float, default=0.05, help='learning rate')
+parser.add_argument('--lr', type=float, default=0.5, help='learning rate')
+parser.add_argument('--num-lstm-layers', type=int, default=1, help='num of layers in the LSTM cell')
 parser.add_argument('--seq-size', type=int, default=300, help='length of the sequence fed to the RNN (default: 300 datapoints, ie 10s at 30FPS)')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
 parser.add_argument('--num-workers', type=int, default=4, metavar='N', help='number of workers to load the data')
@@ -215,9 +214,10 @@ logging.info("Chance accuracy at %.2f" % chance)
 
 best_prec1 = 0
 
-model = PInSoRoRNN(train_dataset.POSES_INPUT_SIZE, 
-                   n_hidden, 
-                   train_dataset.ANNOTATIONS_OUTPUT_SIZE, 
+model = PInSoRoRNN(input_dim=train_dataset.POSES_INPUT_SIZE, 
+                   hidden_dim=n_hidden, 
+                   output_dim=train_dataset.ANNOTATIONS_OUTPUT_SIZE, 
+                   num_layers=args.num_lstm_layers,
                    device=device)
 
 
@@ -323,7 +323,7 @@ try:
                 avg_loss = current_loss / eval_every_iteration
                 avg_accuracy = current_accuracy / eval_every_iteration
 
-                logging.info('iteration %d (%d%% of epoch) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration / len(train_loader) * 100, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
+                logging.info('iteration %d (%d%% of epoch %d) (%s) -- avg loss over the last %d iterations: %.4f (accuracy: %.4f)' % (iteration, iteration / len(train_loader) * 100, epoch, timeSince(start), eval_every_iteration, avg_loss, avg_accuracy))
 
                 current_loss = 0
                 current_accuracy = 0
