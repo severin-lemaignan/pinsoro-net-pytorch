@@ -124,10 +124,10 @@ def compute_chance(dim1, dim2, k=2, n=2000):
          a.scatter_(1, tmp.topk(k)[1],1.)
          return a
 
-   tot=0
-   for i in range(n):
-       tot+=accuracy(torch.rand(dim1,dim2),make_rand_one_hot(dim1,dim2,k))
-   return tot/n
+    tot=0
+    for i in range(n):
+        tot+=accuracy(torch.rand(dim1,dim2),make_rand_one_hot(dim1,dim2,k))
+    return tot/n
 
 
 
