@@ -150,6 +150,7 @@ parser.add_argument('--constructs', default="social-attitude", help='type of soc
 parser.add_argument('--epochs', type=int, default=10, help='upper epoch limit')
 parser.add_argument('--lr', type=float, default=0.5, help='learning rate')
 parser.add_argument('--num-lstm-layers', type=int, default=1, help='num of layers in the LSTM cell')
+parser.add_argument('--lstm-dropout', type=float, default=0, help='optional dropout (0>x>1) within the LSTM layer')
 parser.add_argument('--seq-size', type=int, default=300, help='length of the sequence fed to the RNN (default: 300 datapoints, ie 10s at 30FPS)')
 parser.add_argument('--batch-size', type=int, default=300, metavar='N', help='batch size')
 parser.add_argument('--num-workers', type=int, default=4, metavar='N', help='number of workers to load the data')
@@ -196,7 +197,7 @@ save_every_iteration = 1000
 learning_rate = args.lr
 
 timestamp = "{:%Y-%m-%d-%H:%M}".format(datetime.now())
-model_id = "%s-%s-%s-lr-%f-seq-size-%d-num-layers-%d" % (timestamp, PInSoRoRNN.version, args.constructs, learning_rate, seq_size, args.num_lstm_layers)
+model_id = "%s-%s-%s-lr-%.5f-seq-size-%d-num-layers-%d-dropout-%.3f" % (timestamp, PInSoRoRNN.version, args.constructs, learning_rate, seq_size, args.num_lstm_layers, args.lstm_dropout)
 
 writer = SummaryWriter('runs/%s' % model_id)
 
@@ -219,6 +220,7 @@ model = PInSoRoRNN(input_dim=train_dataset.POSES_INPUT_SIZE,
                    hidden_dim=n_hidden, 
                    output_dim=train_dataset.ANNOTATIONS_OUTPUT_SIZE, 
                    num_layers=args.num_lstm_layers,
+                   dropout=args.lstm_dropout,
                    device=device)
 
 

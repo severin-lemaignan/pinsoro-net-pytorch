@@ -5,7 +5,7 @@ import torch.nn.functional as F
 class PInSoRoRNN(nn.Module):
     version="v3"
 
-    def __init__(self, input_dim, hidden_dim, output_dim, device, num_layers=1):
+    def __init__(self, input_dim, hidden_dim, output_dim, device, num_layers=1, dropout=0):
         """
         """
         super(PInSoRoRNN, self).__init__()
@@ -20,7 +20,7 @@ class PInSoRoRNN(nn.Module):
                                   hidden_size=hidden_dim,
                                   num_layers=self.num_layers,
                                   batch_first=True, # the input and output tensors are provided as (batch, seq, feature)
-                                  dropout=0
+                                  dropout=dropout
                                   )
 
         self.fc1 = nn.Linear(hidden_dim, hidden_dim)
